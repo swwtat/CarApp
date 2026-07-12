@@ -1,0 +1,8 @@
+best_threshold=0.6378
+tar=0.9036
+far=0.0001
+accuracy=0.9995
+intra_mean=0.8180
+intra_std=0.1396
+inter_mean=0.0053
+inter_std=0.1492

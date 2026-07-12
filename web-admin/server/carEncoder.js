@@ -38,4 +38,10 @@ function encodeCancelFrame(orderNo) {
   return baseEncode('21', stringToHex(JSON.stringify({ action: 'cancel', order_no: orderNo })));
 }
 
-module.exports = { encodeOrderFrame, encodeCancelFrame, baseEncode };
+/** type=22 人脸扫描指令 */
+function encodeFaceScanFrame(scanPayload) {
+  const json = JSON.stringify(scanPayload);
+  return baseEncode('22', stringToHex(json));
+}
+
+module.exports = { encodeOrderFrame, encodeCancelFrame, encodeFaceScanFrame, baseEncode };

@@ -1,7 +1,7 @@
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
-const { encodeOrderFrame, encodeCancelFrame } = require('./carEncoder');
+const { encodeOrderFrame, encodeCancelFrame, encodeFaceScanFrame } = require('./carEncoder');
 const { SITE_FLOOR } = require('./db');
 
 const TCP_TIMEOUT = 5000;
@@ -93,4 +93,39 @@ async function cancelOrderOnCar(orderNo, car) {
   return sendTcpFrame(car?.ip_address, port, frame);
 }
 
-module.exports = { pushOrderToCar, cancelOrderOnCar, buildOrderPayload };
+// ── 人脸扫描 ──────────────────────────────────────
+const FACE_TCP_PORT = 6001; // 人脸识别专用端口
+
+function buildFaceScanPayload(order, uploadsDir) {
+  let faceImageBase64 = null;
+  if (order.face_image) {
+    const facePath = path.join(uploadsDir, order.face_image);
+    if (fs.existsSync(facePath)) {
+      faceImageBase64 = fs.readFileSync(facePath).toString('base64');
+    }
+  }
+  return {
+    action: 'face_scan',
+    order_id: order.id,
+    order_no: order.order_no,
+    recipient_name: order.recipient_name,
+    classroom_no: order.classroom_no,
+    face_image_base64: faceImageBase64,
+  };
+}
+
+async function pushFaceScanToCar(order, car, uploadsDir) {
+  const payload = buildFaceScanPayload(order, uploadsDir);
+  const frame = encodeFaceScanFrame(payload);
+  const result = await sendTcpFrame(car?.ip_address, FACE_TCP_PORT, frame);
+  return {
+    ...result,
+    host: car?.ip_address,
+    port: FACE_TCP_PORT,
+    order_no: order.order_no,
+    recipient_name: order.recipient_name,
+    frame_preview: frame.length > 80 ? `${frame.slice(0, 80)}...` : frame,
+  };
+}
+
+module.exports = { pushOrderToCar, cancelOrderOnCar, pushFaceScanToCar, buildOrderPayload, buildFaceScanPayload };

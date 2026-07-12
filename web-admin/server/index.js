@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { db, initDb, UPLOADS_DIR, getSingleCar, getRecipientByName, SITE_FLOOR, SINGLE_CAR_NAME } = require('./db');
-const { pushOrderToCar, cancelOrderOnCar } = require('./tcpPush');
+const { pushOrderToCar, cancelOrderOnCar, pushFaceScanToCar } = require('./tcpPush');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -258,6 +258,51 @@ app.post('/api/orders/:id/cancel-tcp', async (req, res) => {
   res.json({ tcp_result });
 });
 
+// ── Face Scan ────────────────────────────────────
+
+app.post('/api/orders/:id/face-scan', async (req, res) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+  if (!order) return res.status(404).json({ error: '订单不存在' });
+  if (!order.face_image) return res.status(400).json({ error: '该订单未关联收件人人脸' });
+
+  const car = getSingleCar();
+  if (!car) return res.status(400).json({ error: '小车未配置' });
+
+  // 更新状态为 scanning
+  db.prepare("UPDATE orders SET status = 'scanning', updated_at = datetime('now') WHERE id = ?")
+    .run(order.id);
+
+  const result = await pushFaceScanToCar(order, car, UPLOADS_DIR);
+  if (result.ok) {
+    db.prepare("UPDATE cars SET status = 'scanning' WHERE id = ?").run(car.id);
+  }
+
+  res.json({
+    order: mapOrder(db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)),
+    tcp_push: result,
+  });
+});
+
+// 小车查询人脸识别状态 (轮询接口)
+app.get('/api/orders/:id/face-status', (req, res) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+  if (!order) return res.status(404).json({ error: '订单不存在' });
+
+  // 读取小车写入的状态文件 (通过 NFS 或 HTTP)
+  const statusPath = path.join(require('os').homedir(), 'icar_face_status.json');
+  let faceStatus = null;
+  try {
+    if (fs.existsSync(statusPath)) {
+      faceStatus = JSON.parse(fs.readFileSync(statusPath, 'utf-8'));
+    }
+  } catch { /* ignore */ }
+
+  res.json({
+    order_status: order.status,
+    face_scan: faceStatus,
+  });
+});
+
 app.delete('/api/orders/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: '订单不存在' });
@@ -414,7 +459,7 @@ function fetchRobotTask(res, carId) {
       delivery_steps: [
         { step: 1, action: 'navigate', target: mapped.classroom_no, desc: `在${SITE_FLOOR}自动导航至 ${mapped.classroom_no} 教室` },
         { step: 2, action: 'enter', target: mapped.classroom_no, desc: '驶入教室' },
-        { step: 3, action: 'face_scan', face_image_url: mapped.face_image_url, desc: '扫描教室内人脸并比对收件人' },
+        { step: 3, action: 'face_scan', face_image_url: mapped.face_image_url, desc: '摄像头扫描人脸,调用 icar_face 识别节点比对', api: `/api/orders/${mapped.id}/face-scan` },
         { step: 4, action: 'deliver', desc: '核验通过后递交货物' },
       ],
     },
