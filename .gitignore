@@ -27,3 +27,10 @@ Thumbs.db
 # Keystore
 *.jks
 *.keystore
+
+# Web Admin
+web-admin/node_modules/
+web-admin/.npm-cache/
+web-admin/data/
+web-admin/uploads/faces/*
+!web-admin/uploads/faces/.gitkeep

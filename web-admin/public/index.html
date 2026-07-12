@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>逸夫楼快递机器人 · 后台管理</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🤖</div>
+        <div>
+          <h1>逸夫楼快递</h1>
+          <p id="sidebarFloor">逸夫楼 5 层</p>
+        </div>
+      </div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard">📊 数据概览</button>
+        <button class="nav-item" data-view="orders">📦 订单管理</button>
+        <button class="nav-item" data-view="floor">🏫 楼层教室</button>
+        <button class="nav-item" data-view="cars">🤖 小车状态</button>
+        <button class="nav-item" data-view="create">➕ 新建订单</button>
+      </nav>
+      <div class="flow-hint">
+        <strong>逸夫楼 5 层配送</strong>
+        <ol>
+          <li>指定 5 楼教室号</li>
+          <li>小车自动驶入</li>
+          <li>扫描人脸核验身份</li>
+          <li>递交货物</li>
+        </ol>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h2 id="pageTitle">数据概览</h2>
+        <div class="topbar-actions">
+          <span class="live-dot"></span>
+          <span id="liveTime"></span>
+        </div>
+      </header>
+
+      <section id="view-dashboard" class="view active">
+        <div class="stats-grid" id="statsGrid"></div>
+        <div class="panel">
+          <div class="panel-header"><h3>配送中订单</h3></div>
+          <div id="activeOrders" class="order-cards"></div>
+        </div>
+      </section>
+
+      <section id="view-orders" class="view">
+        <div class="toolbar">
+          <select id="statusFilter">
+            <option value="">全部状态</option>
+            <option value="pending">待分配</option>
+            <option value="assigned">已分配</option>
+            <option value="navigating">前往教室</option>
+            <option value="scanning">人脸核验中</option>
+            <option value="delivered">已送达</option>
+            <option value="failed">配送失败</option>
+          </select>
+          <button class="btn btn-primary" onclick="switchView('create')">+ 新建订单</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>订单号</th>
+                <th>收件人</th>
+                <th>教室号码</th>
+                <th>人脸核验</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="ordersTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-floor" class="view">
+        <div class="panel">
+          <div class="panel-header">
+            <h3 id="floorTitle">楼层教室分布</h3>
+            <p class="hint">配送范围限定在逸夫楼 5 层，501–512 教室</p>
+          </div>
+          <div id="floorPlan" class="floor-plan"></div>
+        </div>
+      </section>
+
+      <section id="view-cars" class="view">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>快递小车状态</h3>
+            <p class="hint">当前场景仅部署一台小车，运行于逸夫楼 5 层</p>
+          </div>
+          <div id="carGrid" class="car-single"></div>
+        </div>
+      </section>
+
+      <section id="view-create" class="view">
+        <form id="createForm" class="form-grid">
+          <div class="form-section">
+            <h3>收件人信息</h3>
+            <label>订单号<input name="order_no" required placeholder="如 KD20260712004" /></label>
+            <label>收件人姓名<input name="recipient_name" required /></label>
+            <label>联系电话<input name="recipient_phone" required type="tel" /></label>
+            <label>包裹描述<input name="package_desc" placeholder="如 文件袋 × 1" /></label>
+            <label>备注<textarea name="remark" rows="2" placeholder="特殊说明"></textarea></label>
+          </div>
+          <div class="form-section">
+            <h3>送达教室</h3>
+            <p class="hint" id="createFloorHint">配送范围：同一楼层内，仅需填写教室号码</p>
+            <label>教室号码
+              <select name="classroom_no" id="classroomSelect" required>
+                <option value="">— 选择教室 —</option>
+              </select>
+            </label>
+            <div class="info-box">
+              订单创建后将通过 TCP 直接下发至逸夫楼快递小车（默认端口 6000），包含教室号与人脸照片。
+            </div>
+          </div>
+          <div class="form-section">
+            <h3>收件人人脸照片 <span class="required-tag">必填</span></h3>
+            <p class="hint">教室内扫描此照片进行身份比对，核验通过后交付</p>
+            <div class="face-upload" id="faceUploadArea">
+              <input type="file" name="face_image" id="faceInput" accept="image/*" required hidden />
+              <div class="face-preview" id="facePreview">
+                <span>点击上传人脸照片</span>
+              </div>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">创建订单</button>
+            <button type="button" class="btn btn-ghost" onclick="switchView('orders')">取消</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <div id="detailModal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeDetail()"></div>
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeDetail()">×</button>
+      <div id="detailBody"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
