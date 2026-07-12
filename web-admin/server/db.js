@@ -1,4 +1,4 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -19,52 +19,82 @@ const YIFU_5F_CLASSROOMS = [
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// ── sql.js adapter ──────────────────────────────────────────────
+let _db; // underlying sql.js Database
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS cars (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    ip_address  TEXT,
-    status      TEXT NOT NULL DEFAULT 'idle',
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-  );
+function saveDb() {
+  fs.writeFileSync(DB_PATH, Buffer.from(_db.export()));
+}
 
-  CREATE TABLE IF NOT EXISTS floor_config (
-    id          INTEGER PRIMARY KEY CHECK (id = 1),
-    floor_name  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-  );
+/**
+ * Statement wrapper that mirrors better-sqlite3's { get, all, run } API.
+ */
+class Stmt {
+  constructor(_sql) { this._sql = _sql; }
 
-  CREATE TABLE IF NOT EXISTS classrooms (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    classroom_no  TEXT NOT NULL UNIQUE,
-    label         TEXT,
-    grid_row      INTEGER NOT NULL DEFAULT 0,
-    grid_col      INTEGER NOT NULL DEFAULT 0
-  );
+  all(...params) {
+    const stmt = _db.prepare(this._sql);
+    if (params.length && params[0] !== undefined) stmt.bind(params);
+    const rows = [];
+    while (stmt.step()) {
+      const cols = stmt.getColumnNames();
+      const vals = stmt.get();
+      const obj = {};
+      cols.forEach((c, i) => { obj[c] = vals[i]; });
+      rows.push(obj);
+    }
+    stmt.free();
+    return rows;
+  }
 
-  CREATE TABLE IF NOT EXISTS orders (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_no        TEXT NOT NULL UNIQUE,
-    recipient_name  TEXT NOT NULL,
-    recipient_phone TEXT NOT NULL,
-    classroom_no    TEXT NOT NULL,
-    face_image      TEXT,
-    package_desc    TEXT,
-    remark          TEXT,
-    status          TEXT NOT NULL DEFAULT 'pending',
-    car_id          INTEGER REFERENCES cars(id) ON DELETE SET NULL,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-`);
+  get(...params) {
+    const stmt = _db.prepare(this._sql);
+    if (params.length && params[0] !== undefined) stmt.bind(params);
+    let result;
+    if (stmt.step()) {
+      const cols = stmt.getColumnNames();
+      const vals = stmt.get();
+      result = {};
+      cols.forEach((c, i) => { result[c] = vals[i]; });
+    }
+    stmt.free();
+    return result;
+  }
+
+  run(...params) {
+    _db.run(this._sql, params.length && params[0] !== undefined ? params : undefined);
+    // Capture lastInsertRowid BEFORE saveDb (which may execute internal SQL)
+    let lastInsertRowid = 0;
+    const idStmt = _db.prepare('SELECT last_insert_rowid() AS id');
+    if (idStmt.step()) lastInsertRowid = idStmt.get()[0];
+    idStmt.free();
+    saveDb();
+    return { changes: _db.getRowsModified(), lastInsertRowid };
+  }
+}
+
+const db = {
+  prepare(sql) { return new Stmt(sql); },
+  exec(sql) { _db.run(sql); saveDb(); },
+};
+
+// ── Schema & data helpers ───────────────────────────────────────
 
 function migrateSchema() {
   const cols = db.prepare('PRAGMA table_info(orders)').all().map(c => c.name);
   const carCols = db.prepare('PRAGMA table_info(cars)').all().map(c => c.name);
+
+  // Ensure recipients table exists (for DBs created before the migration)
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS recipients (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL,
+      phone       TEXT,
+      face_image TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+  } catch { /* table already exists */ }
 
   if (!carCols.includes('tcp_port')) {
     db.exec('ALTER TABLE cars ADD COLUMN tcp_port INTEGER NOT NULL DEFAULT 6000');
@@ -124,9 +154,48 @@ function applySiteConfig() {
   }
 }
 
+function seedRecipients() {
+  const count = db.prepare('SELECT COUNT(*) AS c FROM recipients').get().c;
+  if (count > 0) return;
+
+  const FACEDATA_DIR = path.join(__dirname, '..', '..', 'facedata');
+  const insert = db.prepare(
+    'INSERT INTO recipients (name, phone, face_image) VALUES (?, ?, ?)'
+  );
+
+  // Copy one face photo from each person in facedata/ into uploads/faces/
+  const mapping = [
+    { name: '张明', phone: '13800138001', srcDir: 'personA' },
+    { name: '李芳', phone: '13900139002', srcDir: 'personB' },
+  ];
+
+  for (const { name, phone, srcDir } of mapping) {
+    const srcDirPath = path.join(FACEDATA_DIR, srcDir);
+    if (!fs.existsSync(srcDirPath)) continue;
+
+    const files = fs.readdirSync(srcDirPath).filter(f => /\.(jpg|jpeg|png)$/i.test(f));
+    if (files.length === 0) continue;
+
+    const srcPath = path.join(srcDirPath, files[0]);
+    const ext = path.extname(files[0]);
+    const filename = `recipient_${Date.now()}${ext}`;
+    const destPath = path.join(UPLOADS_DIR, filename);
+    fs.copyFileSync(srcPath, destPath);
+
+    insert.run(name, phone, filename);
+    console.log(`已录入收件人: ${name} (${filename})`);
+  }
+}
+
 function seedIfEmpty() {
   const orderCount = db.prepare('SELECT COUNT(*) AS c FROM orders').get().c;
   if (orderCount > 0) return;
+
+  // Resolve face images from recipients table
+  const getFace = (name) => {
+    const r = db.prepare('SELECT face_image FROM recipients WHERE name = ?').get(name);
+    return r ? r.face_image : null;
+  };
 
   const carId = db.prepare('SELECT id FROM cars ORDER BY id LIMIT 1').get().id;
   const insertOrder = db.prepare(`
@@ -137,19 +206,89 @@ function seedIfEmpty() {
   `);
 
   const samples = [
-    ['KD20260712001', '张明', '13800138001', '501', null, '文件袋 × 1', '进入教室后扫描人脸交付', 'navigating', carId],
-    ['KD20260712002', '李芳', '13900139002', '505', null, '实验器材 × 1', '轻拿轻放', 'pending', null],
-    ['KD20260712003', '王强', '13700137003', '509', null, '教材 × 2', '需本人签收', 'assigned', carId],
+    ['KD20260712001', '张明', '13800138001', '501', getFace('张明'), '文件袋 × 1', '进入教室后扫描人脸交付', 'navigating', carId],
+    ['KD20260712002', '李芳', '13900139002', '505', getFace('李芳'), '实验器材 × 1', '轻拿轻放', 'pending', null],
+    ['KD20260712003', '王强', '13700137003', '509', getFace('王强'), '教材 × 2', '需本人签收', 'assigned', carId],
   ];
   for (const row of samples) insertOrder.run(...row);
 }
 
-migrateSchema();
-applySiteConfig();
-seedIfEmpty();
+// ── Async init ──────────────────────────────────────────────────
+
+async function initDb() {
+  const SQL = await initSqlJs();
+  if (fs.existsSync(DB_PATH)) {
+    _db = new SQL.Database(fs.readFileSync(DB_PATH));
+  } else {
+    _db = new SQL.Database();
+  }
+
+  // Core PRAGMAs
+  _db.run('PRAGMA journal_mode = WAL');
+  _db.run('PRAGMA foreign_keys = ON');
+
+  // Bootstrap schema
+  const createSql = [
+    `CREATE TABLE IF NOT EXISTS cars (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL,
+      ip_address  TEXT,
+      status      TEXT NOT NULL DEFAULT 'idle',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS floor_config (
+      id          INTEGER PRIMARY KEY CHECK (id = 1),
+      floor_name  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS classrooms (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      classroom_no  TEXT NOT NULL UNIQUE,
+      label         TEXT,
+      grid_row      INTEGER NOT NULL DEFAULT 0,
+      grid_col      INTEGER NOT NULL DEFAULT 0
+    )`,
+    `CREATE TABLE IF NOT EXISTS orders (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_no        TEXT NOT NULL UNIQUE,
+      recipient_name  TEXT NOT NULL,
+      recipient_phone TEXT NOT NULL,
+      classroom_no    TEXT NOT NULL,
+      face_image      TEXT,
+      package_desc    TEXT,
+      remark          TEXT,
+      status          TEXT NOT NULL DEFAULT 'pending',
+      car_id          INTEGER REFERENCES cars(id) ON DELETE SET NULL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS recipients (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL,
+      phone       TEXT,
+      face_image TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ];
+  for (const sql of createSql) { _db.run(sql); }
+  saveDb();
+
+  migrateSchema();
+  applySiteConfig();
+  seedRecipients();
+  seedIfEmpty();
+
+  console.log(`SQLite 已就绪 → ${DB_PATH}`);
+  return db;
+}
 
 function getSingleCar() {
   return db.prepare('SELECT * FROM cars ORDER BY id LIMIT 1').get();
 }
 
-module.exports = { db, UPLOADS_DIR, DB_PATH, getSingleCar, SITE_FLOOR, SINGLE_CAR_NAME };
+function getRecipientByName(name) {
+  return db.prepare('SELECT * FROM recipients WHERE name = ?').get(name) || null;
+}
+
+module.exports = { db, initDb, UPLOADS_DIR, DB_PATH, getSingleCar, getRecipientByName, SITE_FLOOR, SINGLE_CAR_NAME };

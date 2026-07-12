@@ -19,6 +19,7 @@
       <nav>
         <button class="nav-item active" data-view="dashboard">📊 数据概览</button>
         <button class="nav-item" data-view="orders">📦 订单管理</button>
+        <button class="nav-item" data-view="recipients">👥 收件人管理</button>
         <button class="nav-item" data-view="floor">🏫 楼层教室</button>
         <button class="nav-item" data-view="cars">🤖 小车状态</button>
         <button class="nav-item" data-view="create">➕ 新建订单</button>
@@ -106,8 +107,12 @@
           <div class="form-section">
             <h3>收件人信息</h3>
             <label>订单号<input name="order_no" required placeholder="如 KD20260712004" /></label>
-            <label>收件人姓名<input name="recipient_name" required /></label>
-            <label>联系电话<input name="recipient_phone" required type="tel" /></label>
+            <label>收件人姓名
+              <select name="recipient_name" id="recipientSelect" required onchange="onRecipientSelect()">
+                <option value="">— 选择已录入收件人 —</option>
+              </select>
+            </label>
+            <label>联系电话<input name="recipient_phone" id="recipientPhoneInput" required type="tel" readonly style="background:var(--surface2)" /></label>
             <label>包裹描述<input name="package_desc" placeholder="如 文件袋 × 1" /></label>
             <label>备注<textarea name="remark" rows="2" placeholder="特殊说明"></textarea></label>
           </div>
@@ -120,17 +125,14 @@
               </select>
             </label>
             <div class="info-box">
-              订单创建后将通过 TCP 直接下发至逸夫楼快递小车（默认端口 6000），包含教室号与人脸照片。
+              选择收件人后，系统将从收件人数据库中自动调取对应人脸照片用于身份核验，无需重复上传。
             </div>
           </div>
           <div class="form-section">
-            <h3>收件人人脸照片 <span class="required-tag">必填</span></h3>
-            <p class="hint">教室内扫描此照片进行身份比对，核验通过后交付</p>
-            <div class="face-upload" id="faceUploadArea">
-              <input type="file" name="face_image" id="faceInput" accept="image/*" required hidden />
-              <div class="face-preview" id="facePreview">
-                <span>点击上传人脸照片</span>
-              </div>
+            <h3>收件人人脸照片 <span class="hint-tag">自动匹配</span></h3>
+            <p class="hint">从收件人数据库中自动获取，请先在「收件人管理」中录入</p>
+            <div class="face-preview-box" id="orderFacePreview">
+              <span>选择收件人后显示人脸照片</span>
             </div>
           </div>
           <div class="form-actions">
@@ -141,6 +143,47 @@
       </section>
     </main>
   </div>
+
+      <section id="view-recipients" class="view">
+        <div class="toolbar">
+          <button class="btn btn-primary" onclick="showRecipientForm()">+ 录入收件人</button>
+        </div>
+        <div id="recipientFormPanel" class="panel hidden" style="margin-bottom:20px">
+          <div class="panel-header"><h3 id="recipientFormTitle">录入收件人</h3></div>
+          <form id="recipientForm" class="form-grid" style="padding:0">
+            <input type="hidden" name="recipient_id" id="recipientId" value="" />
+            <label>姓名 <input name="name" id="recipientNameInput" required placeholder="收件人姓名" /></label>
+            <label>电话 <input name="phone" id="recipientPhoneFormInput" placeholder="手机号码" /></label>
+            <div class="face-upload-box">
+              <label>人脸照片 <span class="required-tag">必填（首次录入）</span></label>
+              <div class="face-upload" id="recipientFaceUploadArea">
+                <input type="file" name="face_image" id="recipientFaceInput" accept="image/*" hidden />
+                <div class="face-preview" id="recipientFacePreview">
+                  <span>点击上传人脸照片</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-actions" style="grid-column:1/-1">
+              <button type="submit" class="btn btn-primary">保存</button>
+              <button type="button" class="btn btn-ghost" onclick="hideRecipientForm()">取消</button>
+            </div>
+          </form>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>姓名</th>
+                <th>电话</th>
+                <th>人脸照片</th>
+                <th>录入时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="recipientsTable"></tbody>
+          </table>
+        </div>
+      </section>
 
   <div id="detailModal" class="modal hidden">
     <div class="modal-backdrop" onclick="closeDetail()"></div>

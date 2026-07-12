@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const { db, UPLOADS_DIR, getSingleCar, SITE_FLOOR, SINGLE_CAR_NAME } = require('./db');
+const { db, initDb, UPLOADS_DIR, getSingleCar, getRecipientByName, SITE_FLOOR, SINGLE_CAR_NAME } = require('./db');
 const { pushOrderToCar, cancelOrderOnCar } = require('./tcpPush');
 
 const app = express();
@@ -132,15 +132,18 @@ app.get('/api/orders/:id', (req, res) => {
   res.json(mapOrder(row));
 });
 
-app.post('/api/orders', upload.single('face_image'), async (req, res) => {
+app.post('/api/orders', async (req, res) => {
   try {
     const { order_no, recipient_name, recipient_phone, classroom_no, package_desc, remark } = req.body;
 
     if (!order_no || !recipient_name || !recipient_phone || !classroom_no) {
       return res.status(400).json({ error: '请填写订单号、收件人、电话和教室号码' });
     }
-    if (!req.file) {
-      return res.status(400).json({ error: '请上传收件人人脸照片，小车需在教室内扫描核验' });
+
+    // Look up recipient's face image from the recipients database
+    const recipient = getRecipientByName(recipient_name.trim());
+    if (!recipient || !recipient.face_image) {
+      return res.status(400).json({ error: `收件人「${recipient_name}」未录入人脸信息，请先在收件人管理中注册` });
     }
 
     const classroom = getClassroom(classroom_no.trim());
@@ -153,7 +156,7 @@ app.post('/api/orders', upload.single('face_image'), async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       order_no, recipient_name, recipient_phone, classroom_no.trim(),
-      req.file.filename, package_desc || null, remark || null
+      recipient.face_image, package_desc || null, remark || null
     );
 
     const orderId = result.lastInsertRowid;
@@ -180,29 +183,31 @@ app.post('/api/orders', upload.single('face_image'), async (req, res) => {
   }
 });
 
-app.patch('/api/orders/:id', upload.single('face_image'), (req, res) => {
+app.patch('/api/orders/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: '订单不存在' });
 
-  const { status, remark } = req.body;
+  const { status, remark, recipient_name } = req.body;
   const updates = [];
   const params = [];
 
   if (status !== undefined) { updates.push('status = ?'); params.push(status); }
   if (remark !== undefined) { updates.push('remark = ?'); params.push(remark); }
 
+  // If recipient name changes, refresh face_image from recipients table
+  if (recipient_name !== undefined) {
+    const recipient = getRecipientByName(recipient_name.trim());
+    if (!recipient || !recipient.face_image) {
+      return res.status(400).json({ error: `收件人「${recipient_name}」未录入人脸信息` });
+    }
+    updates.push('recipient_name = ?'); params.push(recipient_name.trim());
+    updates.push('face_image = ?'); params.push(recipient.face_image);
+  }
+
   const car = getSingleCar();
   if (car && status && ['assigned', 'navigating', 'scanning'].includes(status)) {
     updates.push('car_id = ?');
     params.push(car.id);
-  }
-  if (req.file) {
-    if (existing.face_image) {
-      const oldPath = path.join(UPLOADS_DIR, existing.face_image);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
-    updates.push('face_image = ?');
-    params.push(req.file.filename);
   }
 
   if (updates.length === 0) return res.status(400).json({ error: '无更新内容' });
@@ -256,10 +261,7 @@ app.post('/api/orders/:id/cancel-tcp', async (req, res) => {
 app.delete('/api/orders/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: '订单不存在' });
-  if (existing.face_image) {
-    const facePath = path.join(UPLOADS_DIR, existing.face_image);
-    if (fs.existsSync(facePath)) fs.unlinkSync(facePath);
-  }
+  // 不删除人脸文件：人脸照片属于收件人数据库，多个订单可共用
   db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -274,6 +276,101 @@ app.get('/api/stats', (_req, res) => {
   stats.car_name = SINGLE_CAR_NAME;
   stats.floor_name = SITE_FLOOR;
   res.json(stats);
+});
+
+// --- Recipients ---
+
+app.get('/api/recipients', (_req, res) => {
+  const rows = db.prepare('SELECT * FROM recipients ORDER BY id DESC').all();
+  res.json(rows.map(r => ({
+    ...r,
+    face_image_url: r.face_image ? `/uploads/faces/${r.face_image}` : null,
+  })));
+});
+
+app.get('/api/recipients/:id', (req, res) => {
+  const r = db.prepare('SELECT * FROM recipients WHERE id = ?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: '收件人不存在' });
+  res.json({
+    ...r,
+    face_image_url: r.face_image ? `/uploads/faces/${r.face_image}` : null,
+  });
+});
+
+app.post('/api/recipients', upload.single('face_image'), (req, res) => {
+  const { name, phone } = req.body;
+  if (!name) return res.status(400).json({ error: '请填写收件人姓名' });
+  if (!req.file) return res.status(400).json({ error: '请上传收件人人脸照片' });
+
+  const existing = db.prepare('SELECT id FROM recipients WHERE name = ?').get(name.trim());
+  if (existing) return res.status(409).json({ error: `收件人「${name}」已存在，请使用其他姓名或编辑现有记录` });
+
+  const result = db.prepare(
+    'INSERT INTO recipients (name, phone, face_image) VALUES (?, ?, ?)'
+  ).run(name.trim(), phone || null, req.file.filename);
+
+  const r = db.prepare('SELECT * FROM recipients WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json({
+    ...r,
+    face_image_url: r.face_image ? `/uploads/faces/${r.face_image}` : null,
+  });
+});
+
+app.patch('/api/recipients/:id', upload.single('face_image'), (req, res) => {
+  const existing = db.prepare('SELECT * FROM recipients WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: '收件人不存在' });
+
+  const { name, phone } = req.body;
+  const updates = [];
+  const params = [];
+
+  if (name !== undefined) { updates.push('name = ?'); params.push(name.trim()); }
+  if (phone !== undefined) { updates.push('phone = ?'); params.push(phone); }
+  if (req.file) {
+    // Remove old face image file
+    if (existing.face_image) {
+      const oldPath = path.join(UPLOADS_DIR, existing.face_image);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+    updates.push('face_image = ?');
+    params.push(req.file.filename);
+  }
+
+  if (updates.length === 0) return res.status(400).json({ error: '无更新内容' });
+
+  updates.push("updated_at = datetime('now')");
+  params.push(req.params.id);
+  db.prepare(`UPDATE recipients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+  // Refresh face_image on all orders linked to this recipient
+  if (req.file || name !== undefined) {
+    const fresh = db.prepare('SELECT * FROM recipients WHERE id = ?').get(req.params.id);
+    if (fresh && fresh.face_image) {
+      db.prepare('UPDATE orders SET face_image = ? WHERE recipient_name = ?')
+        .run(fresh.face_image, fresh.name);
+    }
+  }
+
+  const r = db.prepare('SELECT * FROM recipients WHERE id = ?').get(req.params.id);
+  res.json({ ...r, face_image_url: r.face_image ? `/uploads/faces/${r.face_image}` : null });
+});
+
+app.delete('/api/recipients/:id', (req, res) => {
+  const existing = db.prepare('SELECT * FROM recipients WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: '收件人不存在' });
+
+  // Remove face image file
+  if (existing.face_image) {
+    // Check if any orders still reference this image
+    const refCount = db.prepare('SELECT COUNT(*) AS c FROM orders WHERE face_image = ?').get(existing.face_image).c;
+    if (refCount === 0) {
+      const imgPath = path.join(UPLOADS_DIR, existing.face_image);
+      if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+    }
+  }
+
+  db.prepare('DELETE FROM recipients WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 // --- Robot API: fetch task by classroom + face for delivery ---
@@ -328,6 +425,9 @@ app.use((err, _req, res, _next) => {
   res.status(400).json({ error: err.message });
 });
 
+(async () => {
+await initDb();
+
 const server = app.listen(PORT, () => {
   const car = getSingleCar();
   console.log(`送快递机器人后台管理端: http://localhost:${PORT}`);
@@ -346,3 +446,4 @@ server.on('error', (err) => {
   }
   throw err;
 });
+})();

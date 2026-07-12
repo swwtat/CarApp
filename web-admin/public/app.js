@@ -5,6 +5,7 @@ let floorData = null;
 const TITLES = {
   dashboard: '数据概览',
   orders: '订单管理',
+  recipients: '收件人管理',
   floor: '楼层教室',
   cars: '小车状态',
   create: '新建订单',
@@ -24,9 +25,10 @@ function switchView(name) {
   document.getElementById('pageTitle').textContent = TITLES[name];
   if (name === 'dashboard') loadDashboard();
   if (name === 'orders') loadOrders();
+  if (name === 'recipients') loadRecipients();
   if (name === 'floor') loadFloorPlan();
   if (name === 'cars') loadCars();
-  if (name === 'create') loadClassroomOptions();
+  if (name === 'create') { loadClassroomOptions(); loadRecipientOptions(); }
 }
 
 async function api(path, opts = {}) {
@@ -331,22 +333,43 @@ async function saveCarTcp() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-const faceInput = document.getElementById('faceInput');
-const facePreview = document.getElementById('facePreview');
-document.getElementById('faceUploadArea').addEventListener('click', () => faceInput.click());
-faceInput.addEventListener('change', () => {
-  const file = faceInput.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => { facePreview.innerHTML = `<img src="${e.target.result}" alt="预览" />`; };
-  reader.readAsDataURL(file);
-});
+// ── Recipient select in create order ────────────────────────────
+let recipientsList = [];
 
+async function loadRecipientOptions() {
+  recipientsList = await api('/recipients');
+  const select = document.getElementById('recipientSelect');
+  select.innerHTML = '<option value="">— 选择已录入收件人 —</option>' +
+    recipientsList.map(r =>
+      `<option value="${r.name}" data-phone="${r.phone || ''}" data-face="${r.face_image_url || ''}">${r.name}</option>`
+    ).join('');
+}
+
+function onRecipientSelect() {
+  const select = document.getElementById('recipientSelect');
+  const opt = select.selectedOptions[0];
+  const phone = opt?.dataset.phone || '';
+  const faceUrl = opt?.dataset.face || '';
+  document.getElementById('recipientPhoneInput').value = phone;
+  const preview = document.getElementById('orderFacePreview');
+  if (faceUrl) {
+    preview.innerHTML = `<img src="${faceUrl}" alt="收件人人脸" style="max-width:200px;border-radius:8px" />`;
+  } else {
+    preview.innerHTML = '<span>该收件人暂无照片</span>';
+  }
+}
+
+// ── Create order (no file upload) ────────────────────────────────
 document.getElementById('createForm').addEventListener('submit', async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
   try {
-    const res = await api('/orders', { method: 'POST', body: fd });
+    const res = await api('/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
     if (res.tcp_push?.ok) {
       toast(`订单已创建，已通过 TCP 下发至 ${res.tcp_push.host}:${res.tcp_push.port}`);
     } else if (res.tcp_push?.error) {
@@ -355,9 +378,102 @@ document.getElementById('createForm').addEventListener('submit', async e => {
       toast('订单创建成功');
     }
     e.target.reset();
-    facePreview.innerHTML = '<span>点击上传人脸照片</span>';
+    document.getElementById('orderFacePreview').innerHTML = '<span>选择收件人后显示人脸照片</span>';
     switchView('orders');
   } catch (err) { toast(err.message, 'error'); }
 });
+
+// ── Recipient management ─────────────────────────────────────────
+function showRecipientForm(id = null) {
+  document.getElementById('recipientFormPanel').classList.remove('hidden');
+  document.getElementById('recipientFormTitle').textContent = id ? '编辑收件人' : '录入收件人';
+  document.getElementById('recipientId').value = id || '';
+  if (!id) {
+    document.getElementById('recipientForm').reset();
+    document.getElementById('recipientFacePreview').innerHTML = '<span>点击上传人脸照片</span>';
+  } else {
+    const r = recipientsList.find(x => x.id === parseInt(id));
+    if (r) {
+      document.getElementById('recipientNameInput').value = r.name || '';
+      document.getElementById('recipientPhoneFormInput').value = r.phone || '';
+      const preview = document.getElementById('recipientFacePreview');
+      if (r.face_image_url) {
+        preview.innerHTML = `<img src="${r.face_image_url}" alt="${r.name}" />`;
+      } else {
+        preview.innerHTML = '<span>点击上传人脸照片</span>';
+      }
+    }
+  }
+}
+
+function hideRecipientForm() {
+  document.getElementById('recipientFormPanel').classList.add('hidden');
+}
+
+document.getElementById('recipientFaceUploadArea').addEventListener('click', () => {
+  document.getElementById('recipientFaceInput').click();
+});
+document.getElementById('recipientFaceInput').addEventListener('change', () => {
+  const file = document.getElementById('recipientFaceInput').files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('recipientFacePreview').innerHTML =
+      `<img src="${e.target.result}" alt="预览" />`;
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('recipientForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const recipientId = fd.get('recipient_id');
+  fd.delete('recipient_id');
+
+  const isEdit = !!recipientId;
+  const url = isEdit ? `/recipients/${recipientId}` : '/recipients';
+  const method = isEdit ? 'PATCH' : 'POST';
+
+  try {
+    await api(url, { method, body: fd });
+    toast(isEdit ? '收件人已更新' : '收件人已录入');
+    hideRecipientForm();
+    await loadRecipients();
+    await loadRecipientOptions(); // refresh the create-order dropdown too
+  } catch (err) { toast(err.message, 'error'); }
+});
+
+async function loadRecipients() {
+  recipientsList = await api('/recipients');
+  const tbody = document.getElementById('recipientsTable');
+  if (!recipientsList.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">暂无录入收件人，请先录入</td></tr>';
+    return;
+  }
+  tbody.innerHTML = recipientsList.map(r => `
+    <tr>
+      <td><strong>${r.name}</strong></td>
+      <td>${r.phone || '—'}</td>
+      <td>${r.face_image_url
+        ? `<img class="face-thumb" src="${r.face_image_url}" alt="${r.name}" />`
+        : '<span class="face-missing">👤</span>'}</td>
+      <td><small>${r.created_at ? r.created_at.slice(0, 10) : '—'}</small></td>
+      <td>
+        <button class="btn btn-sm btn-ghost" onclick="showRecipientForm(${r.id})">编辑</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteRecipient(${r.id}, '${r.name}')">删除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function deleteRecipient(id, name) {
+  if (!confirm(`确定删除收件人「${name}」？删除后，该收件人人脸信息将不再可用。`)) return;
+  try {
+    await api(`/recipients/${id}`, { method: 'DELETE' });
+    toast('收件人已删除');
+    await loadRecipients();
+    await loadRecipientOptions();
+  } catch (err) { toast(err.message, 'error'); }
+}
 
 loadDashboard();
