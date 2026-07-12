@@ -34,3 +34,4 @@ web-admin/.npm-cache/
 web-admin/data/
 web-admin/uploads/faces/*
 !web-admin/uploads/faces/.gitkeep
+*.onnx.data
