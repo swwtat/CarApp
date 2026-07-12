@@ -31,8 +31,7 @@ const upload = multer({
 });
 
 const STATUS_LABELS = {
-  pending: '待分配',
-  assigned: '已分配',
+  queued: '排队中',
   navigating: '前往教室',
   scanning: '人脸核验中',
   delivered: '已送达',
@@ -57,7 +56,7 @@ function mapOrder(row) {
     floor_name: floor.floor_name,
     classroom_label: classroom?.label || `${row.classroom_no} 教室`,
     classroom_position: classroom ? { row: classroom.grid_row, col: classroom.grid_col } : null,
-    status_label: STATUS_LABELS[row.status] || row.status,
+    status_label: STATUS_LABELS[row.status] || ({ pending: '排队中', assigned: '排队中' }[row.status]) || row.status,
     face_image_url: row.face_image ? `/uploads/faces/${row.face_image}` : null,
     delivery_flow: `${SINGLE_CAR_NAME} 在${SITE_FLOOR}根据教室号自动驶入 → 进入教室 → 摄像头扫描人脸 → 核验通过后递交货物`,
   };
@@ -132,12 +131,27 @@ app.get('/api/orders/:id', (req, res) => {
   res.json(mapOrder(row));
 });
 
+function generateOrderNo() {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const prefix = `KD${dateStr}`;
+  const last = db.prepare(
+    'SELECT order_no FROM orders WHERE order_no LIKE ? ORDER BY order_no DESC LIMIT 1'
+  ).get(`${prefix}%`);
+  let seq = 1;
+  if (last?.order_no) {
+    const n = parseInt(last.order_no.slice(prefix.length), 10);
+    if (!Number.isNaN(n)) seq = n + 1;
+  }
+  return `${prefix}${String(seq).padStart(3, '0')}`;
+}
+
 app.post('/api/orders', async (req, res) => {
   try {
-    const { order_no, recipient_name, recipient_phone, classroom_no, package_desc, remark } = req.body;
+    const { recipient_name, recipient_phone, classroom_no, package_desc, remark } = req.body;
 
-    if (!order_no || !recipient_name || !recipient_phone || !classroom_no) {
-      return res.status(400).json({ error: '请填写订单号、收件人、电话和教室号码' });
+    if (!recipient_name || !recipient_phone || !classroom_no) {
+      return res.status(400).json({ error: '请选择收件人并填写教室号码' });
     }
 
     // Look up recipient's face image from the recipients database
@@ -151,6 +165,8 @@ app.post('/api/orders', async (req, res) => {
       return res.status(400).json({ error: `教室 ${classroom_no} 不在当前楼层教室列表中` });
     }
 
+    const order_no = generateOrderNo();
+
     const result = db.prepare(`
       INSERT INTO orders (order_no, recipient_name, recipient_phone, classroom_no, face_image, package_desc, remark)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -162,7 +178,7 @@ app.post('/api/orders', async (req, res) => {
     const orderId = result.lastInsertRowid;
     const car = getSingleCar();
     if (car) {
-      db.prepare("UPDATE orders SET car_id = ?, status = 'assigned', updated_at = datetime('now') WHERE id = ?")
+      db.prepare("UPDATE orders SET car_id = ?, status = 'queued', updated_at = datetime('now') WHERE id = ?")
         .run(car.id, orderId);
     }
 
@@ -172,7 +188,7 @@ app.post('/api/orders', async (req, res) => {
     if (car) {
       tcp_push = await pushOrderToCar(order, car, UPLOADS_DIR);
       if (tcp_push.ok) {
-        db.prepare("UPDATE cars SET status = 'assigned' WHERE id = ?").run(car.id);
+        db.prepare("UPDATE cars SET status = 'queued' WHERE id = ?").run(car.id);
       }
     }
 
@@ -205,7 +221,7 @@ app.patch('/api/orders/:id', (req, res) => {
   }
 
   const car = getSingleCar();
-  if (car && status && ['assigned', 'navigating', 'scanning'].includes(status)) {
+  if (car && status && ['queued', 'navigating', 'scanning'].includes(status)) {
     updates.push('car_id = ?');
     params.push(car.id);
   }
@@ -216,7 +232,7 @@ app.patch('/api/orders/:id', (req, res) => {
   params.push(req.params.id);
   db.prepare(`UPDATE orders SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-  const activeStatuses = ['assigned', 'navigating', 'scanning'];
+  const activeStatuses = ['queued', 'navigating', 'scanning'];
   if (status && activeStatuses.includes(status)) {
     const updated = db.prepare('SELECT car_id FROM orders WHERE id = ?').get(req.params.id);
     if (updated.car_id) {
@@ -234,18 +250,18 @@ app.post('/api/orders/:id/push-tcp', async (req, res) => {
   const car = getSingleCar();
   if (!car) return res.status(400).json({ error: '小车未配置' });
 
-  if (!['assigned', 'navigating', 'scanning', 'pending'].includes(order.status)) {
+  if (!['queued', 'navigating', 'scanning'].includes(order.status)) {
     return res.status(400).json({ error: '当前订单状态不可下发' });
   }
 
   if (!order.car_id) {
-    db.prepare("UPDATE orders SET car_id = ?, status = 'assigned', updated_at = datetime('now') WHERE id = ?")
+    db.prepare("UPDATE orders SET car_id = ?, status = 'queued', updated_at = datetime('now') WHERE id = ?")
       .run(car.id, order.id);
   }
 
   const tcp_push = await pushOrderToCar(order, car, UPLOADS_DIR);
   if (tcp_push.ok) {
-    db.prepare("UPDATE cars SET status = 'assigned' WHERE id = ?").run(car.id);
+    db.prepare("UPDATE cars SET status = 'queued' WHERE id = ?").run(car.id);
   }
   res.json({ order: mapOrder(db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)), tcp_push });
 });
@@ -315,8 +331,15 @@ app.delete('/api/orders/:id', (req, res) => {
 
 app.get('/api/stats', (_req, res) => {
   const rows = db.prepare('SELECT status, COUNT(*) AS count FROM orders GROUP BY status').all();
-  const stats = { total: 0, pending: 0, assigned: 0, navigating: 0, scanning: 0, delivered: 0, failed: 0 };
-  for (const r of rows) { stats[r.status] = r.count; stats.total += r.count; }
+  const stats = { total: 0, queued: 0, navigating: 0, scanning: 0, delivered: 0, failed: 0 };
+  for (const r of rows) {
+    if (r.status === 'pending' || r.status === 'assigned') {
+      stats.queued += r.count;
+    } else if (stats[r.status] !== undefined) {
+      stats[r.status] = r.count;
+    }
+    stats.total += r.count;
+  }
   stats.cars = getSingleCar() ? 1 : 0;
   stats.car_name = SINGLE_CAR_NAME;
   stats.floor_name = SITE_FLOOR;
@@ -436,7 +459,7 @@ function fetchRobotTask(res, carId) {
   const task = db.prepare(`
     SELECT o.*, c.name AS car_name
     FROM orders o JOIN cars c ON o.car_id = c.id
-    WHERE o.car_id = ? AND o.status IN ('assigned', 'navigating', 'scanning')
+    WHERE o.car_id = ? AND o.status IN ('queued', 'navigating', 'scanning')
     ORDER BY o.updated_at DESC LIMIT 1
   `).get(carId);
 

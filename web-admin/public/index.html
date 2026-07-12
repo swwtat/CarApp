@@ -47,7 +47,7 @@
       <section id="view-dashboard" class="view active">
         <div class="stats-grid" id="statsGrid"></div>
         <div class="panel">
-          <div class="panel-header"><h3>配送中订单</h3></div>
+          <div class="panel-header"><h3>排队与配送中订单</h3></div>
           <div id="activeOrders" class="order-cards"></div>
         </div>
       </section>
@@ -56,8 +56,7 @@
         <div class="toolbar">
           <select id="statusFilter">
             <option value="">全部状态</option>
-            <option value="pending">待分配</option>
-            <option value="assigned">已分配</option>
+            <option value="queued">排队中</option>
             <option value="navigating">前往教室</option>
             <option value="scanning">人脸核验中</option>
             <option value="delivered">已送达</option>
@@ -106,7 +105,7 @@
         <form id="createForm" class="form-grid">
           <div class="form-section">
             <h3>收件人信息</h3>
-            <label>订单号<input name="order_no" required placeholder="如 KD20260712004" /></label>
+            <p class="hint">订单号将在提交后自动生成（格式：KD + 日期 + 序号）</p>
             <label>收件人姓名
               <select name="recipient_name" id="recipientSelect" required onchange="onRecipientSelect()">
                 <option value="">— 选择已录入收件人 —</option>

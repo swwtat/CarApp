@@ -108,6 +108,8 @@ function migrateSchema() {
   }
 
   db.exec("UPDATE orders SET status = 'navigating' WHERE status = 'delivering'");
+  db.exec("UPDATE orders SET status = 'queued' WHERE status IN ('pending', 'assigned')");
+  db.exec("UPDATE cars SET status = 'queued' WHERE status = 'assigned'");
 
   const legacy = ['building', 'floor', 'room', 'address_detail', 'latitude', 'longitude'];
   for (const col of legacy) {
@@ -207,8 +209,8 @@ function seedIfEmpty() {
 
   const samples = [
     ['KD20260712001', '张明', '13800138001', '501', getFace('张明'), '文件袋 × 1', '进入教室后扫描人脸交付', 'navigating', carId],
-    ['KD20260712002', '李芳', '13900139002', '505', getFace('李芳'), '实验器材 × 1', '轻拿轻放', 'pending', null],
-    ['KD20260712003', '王强', '13700137003', '509', getFace('王强'), '教材 × 2', '需本人签收', 'assigned', carId],
+    ['KD20260712002', '李芳', '13900139002', '505', getFace('李芳'), '实验器材 × 1', '轻拿轻放', 'queued', carId],
+    ['KD20260712003', '王强', '13700137003', '509', getFace('王强'), '教材 × 2', '需本人签收', 'queued', carId],
   ];
   for (const row of samples) insertOrder.run(...row);
 }
@@ -257,7 +259,7 @@ async function initDb() {
       face_image      TEXT,
       package_desc    TEXT,
       remark          TEXT,
-      status          TEXT NOT NULL DEFAULT 'pending',
+      status          TEXT NOT NULL DEFAULT 'queued',
       car_id          INTEGER REFERENCES cars(id) ON DELETE SET NULL,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))

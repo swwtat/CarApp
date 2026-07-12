@@ -11,6 +11,14 @@ const TITLES = {
   create: '新建订单',
 };
 
+const ORDER_STATUSES = [
+  { value: 'queued', label: '排队中', desc: '订单已创建，等待小车处理' },
+  { value: 'navigating', label: '前往教室', desc: '小车正在前往目标教室' },
+  { value: 'scanning', label: '人脸核验中', desc: '小车在教室内扫描人脸核验身份' },
+  { value: 'delivered', label: '已送达', desc: '货物已成功交付' },
+  { value: 'failed', label: '配送失败', desc: '配送未能完成' },
+];
+
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => switchView(btn.dataset.view));
 });
@@ -78,7 +86,7 @@ async function loadFloorPlan(highlightClassroom = null) {
 
   const orders = await api('/orders');
   const activeRooms = new Set(
-    orders.filter(o => ['assigned', 'navigating', 'scanning'].includes(o.status))
+    orders.filter(o => ['navigating', 'scanning'].includes(o.status))
       .map(o => o.classroom_no)
   );
 
@@ -110,23 +118,28 @@ async function loadDashboard() {
   const stats = await api('/stats');
   await ensureFloorData();
   const orders = await api('/orders');
-  const active = orders.filter(o => ['assigned', 'navigating', 'scanning'].includes(o.status));
+  const active = orders.filter(o => ['navigating', 'scanning'].includes(o.status));
+  const queued = orders.filter(o => o.status === 'queued');
 
   document.getElementById('statsGrid').innerHTML = `
     <div class="stat-card primary"><div class="label">总订单</div><div class="value">${stats.total}</div></div>
-    <div class="stat-card warning"><div class="label">待分配</div><div class="value">${stats.pending}</div></div>
-    <div class="stat-card info"><div class="label">配送中</div><div class="value">${(stats.assigned||0)+(stats.navigating||0)+(stats.scanning||0)}</div></div>
+    <div class="stat-card warning"><div class="label">排队中</div><div class="value">${stats.queued ?? 0}</div></div>
+    <div class="stat-card info"><div class="label">配送中</div><div class="value">${(stats.navigating||0)+(stats.scanning||0)}</div></div>
     <div class="stat-card success"><div class="label">已送达</div><div class="value">${stats.delivered}</div></div>
     <div class="stat-card"><div class="label">配送范围</div><div class="value floor-stat">${stats.floor_name}</div></div>
     <div class="stat-card info"><div class="label">快递小车</div><div class="value floor-stat">${stats.car_name || '未配置'}</div></div>
   `;
 
   const container = document.getElementById('activeOrders');
-  if (!active.length) {
-    container.innerHTML = '<div class="empty-state">当前没有配送中的订单</div>';
+  const cards = [
+    ...queued.map(o => ({ ...o, _section: 'queued' })),
+    ...active.map(o => ({ ...o, _section: 'active' })),
+  ];
+  if (!cards.length) {
+    container.innerHTML = '<div class="empty-state">当前没有排队或配送中的订单</div>';
     return;
   }
-  container.innerHTML = active.map(o => `
+  container.innerHTML = cards.map(o => `
     <div class="order-card" onclick="showDetail(${o.id})">
       <div class="order-no">${o.order_no} ${badge(o.status, o.status_label)}</div>
       <div class="meta">
@@ -223,16 +236,20 @@ async function showDetail(id) {
         <div id="detailFloorMini" class="floor-plan-mini"></div>
       </div>
       <div class="detail-actions">
-        <select id="detailStatus">
-          <option value="pending" ${o.status==='pending'?'selected':''}>待分配</option>
-          <option value="assigned" ${o.status==='assigned'?'selected':''}>已分配</option>
-          <option value="navigating" ${o.status==='navigating'?'selected':''}>前往教室</option>
-          <option value="scanning" ${o.status==='scanning'?'selected':''}>人脸核验中</option>
-          <option value="delivered" ${o.status==='delivered'?'selected':''}>已送达</option>
-          <option value="failed" ${o.status==='failed'?'selected':''}>配送失败</option>
-        </select>
-        <button class="btn btn-primary btn-sm" onclick="updateOrder(${o.id})">保存更改</button>
+        <button type="button" class="btn btn-sm btn-ghost" onclick="toggleStatusPanel()">查看订单状态</button>
         <button class="btn btn-sm btn-ghost" onclick="pushOrderTcp(${o.id})">TCP 下发小车</button>
+      </div>
+      <div id="statusPanel" class="status-panel hidden">
+        <h4>订单状态说明</h4>
+        <ul class="status-list">
+          ${ORDER_STATUSES.map(s => `
+            <li class="status-list-item ${o.status === s.value ? 'current' : ''}">
+              ${badge(s.value, s.label)}
+              <span class="status-desc">${s.desc}</span>
+              ${o.status === s.value ? '<span class="status-current-tag">当前</span>' : ''}
+            </li>
+          `).join('')}
+        </ul>
       </div>
     </div>
   `;
@@ -263,6 +280,11 @@ function closeDetail() {
   document.getElementById('detailModal').classList.add('hidden');
 }
 
+function toggleStatusPanel() {
+  const panel = document.getElementById('statusPanel');
+  if (panel) panel.classList.toggle('hidden');
+}
+
 async function pushOrderTcp(id) {
   try {
     const res = await api(`/orders/${id}/push-tcp`, { method: 'POST' });
@@ -274,29 +296,18 @@ async function pushOrderTcp(id) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function updateOrder(id) {
-  const fd = new FormData();
-  fd.append('status', document.getElementById('detailStatus').value);
-  try {
-    await api(`/orders/${id}`, { method: 'PATCH', body: fd });
-    toast('订单已更新');
-    closeDetail();
-    await refreshOrderViews();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
 async function loadCars() {
   const car = await api('/car');
   cars = [car];
   const statusLabel = {
-    idle: '空闲', assigned: '已分配', navigating: '前往教室', scanning: '人脸核验中',
+    idle: '空闲', queued: '排队中', navigating: '前往教室', scanning: '人脸核验中',
   }[car.status] || car.status;
 
   document.getElementById('carGrid').innerHTML = `
     <div class="car-card car-card-single">
       <h4>🤖 ${car.name}</h4>
       <div class="detail-row"><span class="label">运行范围</span><span>逸夫楼 5 层</span></div>
-      <div class="detail-row"><span class="label">当前状态</span><span>${badge(car.status === 'idle' ? 'pending' : car.status, statusLabel)}</span></div>
+      <div class="detail-row"><span class="label">当前状态</span><span>${badge(car.status, statusLabel)}</span></div>
       <div class="detail-row">
         <span class="label">TCP 地址</span>
         <span>${car.ip_address || '未配置'}:${car.tcp_port || 6000}</span>
@@ -370,12 +381,13 @@ document.getElementById('createForm').addEventListener('submit', async e => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    const no = res.order_no ? `（${res.order_no}）` : '';
     if (res.tcp_push?.ok) {
-      toast(`订单已创建，已通过 TCP 下发至 ${res.tcp_push.host}:${res.tcp_push.port}`);
+      toast(`订单${no}已创建，已通过 TCP 下发至 ${res.tcp_push.host}:${res.tcp_push.port}`);
     } else if (res.tcp_push?.error) {
-      toast(`订单已创建，但 TCP 下发失败：${res.tcp_push.error}`, 'error');
+      toast(`订单${no}已创建，但 TCP 下发失败：${res.tcp_push.error}`, 'error');
     } else {
-      toast('订单创建成功');
+      toast(`订单${no}创建成功`);
     }
     e.target.reset();
     document.getElementById('orderFacePreview').innerHTML = '<span>选择收件人后显示人脸照片</span>';
