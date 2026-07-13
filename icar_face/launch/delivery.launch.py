@@ -103,7 +103,7 @@ def generate_launch_description():
             ],
         ),
 
-        # ── 4. 订单调度引擎 (最后启动) ──
+        # ── 4. 订单调度引擎 (等待其他节点就绪) ──
         TimerAction(
             period=4.0,
             actions=[
@@ -117,14 +117,30 @@ def generate_launch_description():
                         'classrooms_config': Path(__file__).parent.parent / 'config' / 'classrooms.yaml',
                         'nav_timeout': 120,
                         'face_scan_timeout': 30,
+                        'web_admin_url': '',  # 设为 Web 管理端地址
                     }],
+                ),
+            ],
+        ),
+
+        # ── 5. 语音播报 ──
+        TimerAction(
+            period=5.0,
+            actions=[
+                Node(
+                    package='icar_face',
+                    executable='voice_broadcaster',
+                    name='voice_broadcaster',
+                    output='screen',
                 ),
             ],
         ),
 
         LogInfo(msg='========== 配送系统启动完成 =========='),
         LogInfo(msg='配送订单 TCP: 端口 6000'),
+
         LogInfo(msg='人脸扫描 TCP: 端口 6001'),
         LogInfo(msg='配送状态文件: ~/icar_delivery_status.json'),
+        LogInfo(msg='语音播报: 已启动'),
         LogInfo(msg='确保 Nav2 Docker 已启动后即可接收订单'),
     ])

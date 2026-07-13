@@ -32,6 +32,7 @@ setup(
             'face_bridge = icar_face.face_bridge:main',
             'face_server = icar_face.face_server:main',
             'delivery_controller = icar_face.delivery_controller:main',
+            'voice_broadcaster = icar_face.voice_broadcaster:main',
         ],
     },
 )
