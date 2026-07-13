@@ -327,6 +327,60 @@ app.delete('/api/orders/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Delivery Status (小车实时状态上报) ---
+
+let deliveryStatus = null;  // 内存中缓存的配送状态
+
+app.get('/api/delivery/status', (_req, res) => {
+  // 优先返回小车上报的状态, 其次读取状态文件
+  if (deliveryStatus) {
+    return res.json(deliveryStatus);
+  }
+  // 兜底: 读取小车通过 NFS 写入的状态文件
+  const statusPath = path.join(require('os').homedir(), 'icar_delivery_status.json');
+  try {
+    if (fs.existsSync(statusPath)) {
+      deliveryStatus = JSON.parse(fs.readFileSync(statusPath, 'utf-8'));
+      return res.json(deliveryStatus);
+    }
+  } catch { /* ignore */ }
+  res.json({ state: 'unknown', state_label: '等待连接', message: '小车尚未上报状态' });
+});
+
+app.post('/api/delivery/status', (req, res) => {
+  deliveryStatus = req.body;
+  if (deliveryStatus.timestamp == null) {
+    deliveryStatus.timestamp = Date.now() / 1000;
+  }
+  // 同步更新订单状态
+  try {
+    const orderId = deliveryStatus.order_id;
+    const state = deliveryStatus.state;
+    const statusMap = {
+      'idle': null,
+      'navigating': 'navigating',
+      'arrived': 'navigating',
+      'entering': 'navigating',
+      'scanning': 'scanning',
+      'verified': 'delivered',
+      'returning': 'navigating',
+      'done': 'delivered',
+      'failed': 'failed',
+    };
+    const orderStatus = statusMap[state];
+    if (orderId && orderStatus) {
+      db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(orderStatus, orderId);
+      // 同步更新小车状态
+      const car = getSingleCar();
+      if (car) {
+        db.prepare('UPDATE cars SET status = ? WHERE id = ?').run(orderStatus, car.id);
+      }
+    }
+  } catch { /* ignore db errors from status updates */ }
+  res.json({ ok: true });
+});
+
 // --- Stats ---
 
 app.get('/api/stats', (_req, res) => {

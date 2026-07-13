@@ -31,7 +31,7 @@ function switchView(name) {
     v.classList.toggle('active', v.id === `view-${name}`)
   );
   document.getElementById('pageTitle').textContent = TITLES[name];
-  if (name === 'dashboard') loadDashboard();
+  if (name === 'dashboard') { loadDashboard(); startTrackerPolling(); }
   if (name === 'orders') loadOrders();
   if (name === 'recipients') loadRecipients();
   if (name === 'floor') loadFloorPlan();
@@ -350,6 +350,76 @@ async function saveCarTcp() {
 // ── Recipient select in create order ────────────────────────────
 let recipientsList = [];
 
+// ── Delivery Tracker (实时配送追踪) ────────────────────────────
+
+const DELIVERY_STEPS = [
+  { key: 'idle', icon: '⏳', label: '等待订单' },
+  { key: 'navigating', icon: '🚗', label: '前往教室' },
+  { key: 'arrived', icon: '📍', label: '到达教室' },
+  { key: 'scanning', icon: '📷', label: '人脸核验' },
+  { key: 'verified', icon: '✅', label: '核验通过' },
+  { key: 'returning', icon: '🏠', label: '返回充电桩' },
+  { key: 'done', icon: '🎉', label: '配送完成' },
+  { key: 'failed', icon: '❌', label: '配送失败' },
+];
+
+let trackerTimer = null;
+
+function getActiveStepIndex(state) {
+  if (state === 'failed') return DELIVERY_STEPS.length - 1;
+  const idx = DELIVERY_STEPS.findIndex(s => s.key === state);
+  return idx >= 0 ? idx : 0;
+}
+
+function renderTracker(status) {
+  const container = document.getElementById('deliveryTracker');
+  if (!container) return;
+
+  const state = status.state || 'unknown';
+  const stepIdx = getActiveStepIndex(state);
+
+  let stepsHtml = '<div class="tracker-steps">';
+  DELIVERY_STEPS.forEach((step, i) => {
+    let cls = '';
+    if (state === 'failed' && i === DELIVERY_STEPS.length - 1) cls = 'active';
+    else if (i < stepIdx && state !== 'failed') cls = 'done';
+    else if (i === stepIdx && state !== 'failed') cls = 'active';
+
+    stepsHtml += `
+      <div class="tracker-step ${cls}">
+        <div class="step-icon">${step.icon}</div>
+        <div class="step-label">${step.label}</div>
+      </div>`;
+  });
+  stepsHtml += '</div>';
+
+  const info = status.message || status.state_label || '';
+  const orderNo = status.order_no ? ` · 订单 ${status.order_no}` : '';
+  const classroom = status.classroom_no ? ` · ${status.classroom_no}教室` : '';
+
+  container.innerHTML = stepsHtml + `
+    <div class="tracker-info">
+      ${info}${orderNo}${classroom}
+    </div>`;
+}
+
+async function pollDeliveryStatus() {
+  try {
+    const status = await api('/delivery/status');
+    renderTracker(status);
+  } catch {
+    // Web管理端与小车不在同一机器时接口可能不可用, 静默跳过
+  }
+}
+
+function startTrackerPolling() {
+  pollDeliveryStatus();
+  if (trackerTimer) clearInterval(trackerTimer);
+  trackerTimer = setInterval(pollDeliveryStatus, 3000);
+}
+
+// ── Recipient select in create order ────────────────────────────
+
 async function loadRecipientOptions() {
   recipientsList = await api('/recipients');
   const select = document.getElementById('recipientSelect');
@@ -492,3 +562,4 @@ async function deleteRecipient(id, name) {
 }
 
 loadDashboard();
+startTrackerPolling();

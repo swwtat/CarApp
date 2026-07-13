@@ -633,7 +633,98 @@ tr:hover td { background: rgba(255,255,255,.02); }
   font-size: 14px;
 }
 
+/* Delivery Tracker */
+.delivery-tracker-panel { border-color: var(--primary); }
+.delivery-tracker { padding: 24px; }
+
+.tracker-placeholder {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+}
+
+.tracker-steps {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.tracker-step {
+  flex: 1;
+  text-align: center;
+  position: relative;
+}
+
+.tracker-step::after {
+  content: '';
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  width: 100%;
+  height: 3px;
+  background: var(--border);
+  z-index: 0;
+}
+
+.tracker-step:last-child::after { display: none; }
+
+.tracker-step .step-icon {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 8px;
+  position: relative; z-index: 1;
+  font-size: 18px;
+  transition: all .3s;
+}
+
+.tracker-step.active .step-icon {
+  background: rgba(233,69,96,.15);
+  border-color: var(--primary);
+  box-shadow: 0 0 12px rgba(233,69,96,.3);
+}
+
+.tracker-step.done .step-icon {
+  background: rgba(52,211,153,.15);
+  border-color: var(--success);
+}
+
+.tracker-step.active::after,
+.tracker-step.done::after {
+  background: var(--success);
+}
+
+.tracker-step .step-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.tracker-step.active .step-label {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.tracker-step.done .step-label {
+  color: var(--success);
+}
+
+.tracker-info {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--surface2);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 @media (max-width: 768px) {
   .sidebar { display: none; }
   .form-grid, .detail-grid { grid-template-columns: 1fr; }
+  .tracker-steps { flex-wrap: wrap; gap: 8px; }
+  .tracker-step { flex: 1 1 120px; }
 }

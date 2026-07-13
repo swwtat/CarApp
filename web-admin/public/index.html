@@ -46,6 +46,12 @@
 
       <section id="view-dashboard" class="view active">
         <div class="stats-grid" id="statsGrid"></div>
+        <div class="panel delivery-tracker-panel" id="deliveryTrackerPanel" style="margin-bottom:20px">
+          <div class="panel-header"><h3>🚀 实时配送追踪</h3><span class="live-dot" style="display:inline-block;margin-left:8px"></span></div>
+          <div class="delivery-tracker" id="deliveryTracker">
+            <div class="tracker-placeholder">等待小车连接...</div>
+          </div>
+        </div>
         <div class="panel">
           <div class="panel-header"><h3>排队与配送中订单</h3></div>
           <div id="activeOrders" class="order-cards"></div>

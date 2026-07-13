@@ -24,6 +24,8 @@ import socket
 import threading
 import time
 import yaml
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 from .protocol import parse_frame, build_frame
@@ -67,11 +69,13 @@ class DeliveryController(Node):
         self.declare_parameter('classrooms_config', DEFAULT_CLASSROOMS_CONFIG)
         self.declare_parameter('nav_timeout', NAV_TIMEOUT_SEC)
         self.declare_parameter('face_scan_timeout', FACE_SCAN_TIMEOUT_SEC)
+        self.declare_parameter('web_admin_url', '')  # 如 http://192.168.1.100:3000
 
         self.tcp_port = self.get_parameter('tcp_port').value
         self.classrooms_config_path = self.get_parameter('classrooms_config').value
         self.nav_timeout = self.get_parameter('nav_timeout').value
         self.face_scan_timeout = self.get_parameter('face_scan_timeout').value
+        self.web_admin_url = (self.get_parameter('web_admin_url').value or '').rstrip('/')
 
         # ── 加载教室坐标 ──
         self.classrooms = self._load_classrooms()
@@ -615,7 +619,7 @@ class DeliveryController(Node):
 
     def _publish_status(self, message: str = None, order_id: int = None,
                         order_no: str = None, extra: dict = None):
-        """发布配送状态到 ROS2 话题并写入文件"""
+        """发布配送状态到 ROS2 话题、写入文件、HTTP 上报 Web 管理端"""
         order = self.current_order or {}
 
         msg_data = build_status_msg(
@@ -640,6 +644,29 @@ class DeliveryController(Node):
             )
         except Exception as e:
             self.get_logger().debug(f'写入状态文件失败: {e}')
+
+        # HTTP 上报到 Web 管理端
+        if self.web_admin_url:
+            self._http_post_status(msg_data)
+
+    def _http_post_status(self, msg_data: dict):
+        """HTTP POST 配送状态到 Web 管理端 (后台线程, 不阻塞)"""
+        def _post():
+            try:
+                url = f'{self.web_admin_url}/api/delivery/status'
+                data = json.dumps(msg_data, ensure_ascii=False).encode('utf-8')
+                req = urllib.request.Request(
+                    url, data=data,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST'
+                )
+                urllib.request.urlopen(req, timeout=3)
+            except urllib.error.URLError:
+                self.get_logger().debug(f'HTTP 上报失败 (Web 管理端不可达)')
+            except Exception as e:
+                self.get_logger().debug(f'HTTP 上报异常: {e}')
+
+        threading.Thread(target=_post, daemon=True).start()
 
     # ═══════════════════════════════════════════════════════════════
     # 生命周期
