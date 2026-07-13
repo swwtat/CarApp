@@ -33,6 +33,7 @@ setup(
             'face_server = icar_face.face_server:main',
             'delivery_controller = icar_face.delivery_controller:main',
             'voice_broadcaster = icar_face.voice_broadcaster:main',
+            'visual_detector = icar_face.visual_detector:main',
         ],
     },
 )

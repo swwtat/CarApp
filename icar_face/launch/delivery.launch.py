@@ -136,11 +136,25 @@ def generate_launch_description():
             ],
         ),
 
+        # ── 6. YOLO 视觉检测 ──
+        TimerAction(
+            period=5.0,
+            actions=[
+                Node(
+                    package='icar_face',
+                    executable='visual_detector',
+                    name='visual_detector',
+                    output='screen',
+                ),
+            ],
+        ),
+
         LogInfo(msg='========== 配送系统启动完成 =========='),
         LogInfo(msg='配送订单 TCP: 端口 6000'),
 
         LogInfo(msg='人脸扫描 TCP: 端口 6001'),
         LogInfo(msg='配送状态文件: ~/icar_delivery_status.json'),
         LogInfo(msg='语音播报: 已启动'),
+        LogInfo(msg='YOLO视觉检测: 已启动'),
         LogInfo(msg='确保 Nav2 Docker 已启动后即可接收订单'),
     ])
