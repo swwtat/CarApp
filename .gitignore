@@ -35,3 +35,7 @@ web-admin/data/
 web-admin/uploads/faces/*
 !web-admin/uploads/faces/.gitkeep
 *.onnx.data
+yolo_training/yolov5-7.0/
+package-lock.json
+face_recognition/models/face_embed.onnx
+icar_face/models/face_embed.onnx

@@ -1,0 +1,22 @@
+# YOLOv5 训练数据配置 — 交通标志检测
+# 对应 PDF 2: 第6章 机器人目标检测模型训练
+#
+# 路径说明 (相对于 yolov5-7.0/ 目录):
+#   train: 训练集图片目录
+#   val:   验证集图片目录
+#   test:  测试集图片目录
+
+# 训练集 (70%)
+train: ../traffic_dataset/train/images
+
+# 验证集 (15%)
+val: ../traffic_dataset/valid/images
+
+# 测试集 (15%)
+test: ../traffic_dataset/test/images
+
+# 类别数
+nc: 3
+
+# 类别名称 (顺序与 labelImg 标注的 class_id 对应)
+names: ['turnleft', 'turnright', 'turnaround']

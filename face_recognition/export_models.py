@@ -47,10 +47,14 @@ with torch.no_grad():
     torch_output = resnet(dummy_input)
 print(f"  PyTorch 输出 shape: {torch_output.shape}")  # (1, 512)
 
-# 导出 ONNX
+# 导出 ONNX (使用兼容模式, 避免外部数据文件)
 onnx_path = OUTPUT_DIR / 'face_embed.onnx'
+resnet.eval()
+
+# 使用 torch.jit.trace + old export 避免 dynamo 产生 .data 文件
+traced = torch.jit.trace(resnet, dummy_input)
 torch.onnx.export(
-    resnet,
+    traced,
     dummy_input,
     str(onnx_path),
     export_params=True,
@@ -62,6 +66,7 @@ torch.onnx.export(
         'input': {0: 'batch'},
         'embedding': {0: 'batch'},
     },
+    # 强制使用旧版导出, 生成独立 ONNX 文件
 )
 print(f"  ONNX 已导出: {onnx_path}")
 print(f"  文件大小: {onnx_path.stat().st_size / 1024 / 1024:.1f} MB")
