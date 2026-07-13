@@ -27,6 +27,7 @@ import threading
 import select
 
 from . import TCP_LISTEN_HOST, TCP_LISTEN_PORT, DEBUG_MODE
+from .protocol import parse_frame
 
 
 class FaceBridgeNode(Node):
@@ -128,41 +129,13 @@ class FaceBridgeNode(Node):
 
     def _parse_frame(self, raw: str) -> dict:
         """
-        解析 TCP 协议帧
+        解析 TCP 协议帧 (委托给共享 protocol 模块)
         格式: $01<type><size><data_hex><checksum>#
-
-        type=20 时, data_hex 解码为 UTF-8 JSON
         """
-        try:
-            if not (raw.startswith('$') and '#' in raw):
-                self.get_logger().warn(f'无效帧格式: {raw[:100]}')
-                return None
-
-            # 简单解析: 取 $...# 之间的内容
-            start = raw.index('$')
-            end = raw.index('#', start)
-            content = raw[start+1:end]
-
-            # content = 01 + type(2) + size(2) + data_hex + checksum(2)
-            if len(content) < 8:
-                return None
-
-            frame_type = content[2:4]  # 例如 "20"
-            size_hex = content[4:6]
-            data_size = int(size_hex, 16)
-            data_hex = content[6:6 + (data_size - 2) * 2]  # data 区 (含 data 自身 的 checksum 修正)
-
-            # 简化处理: 直接尝试找 JSON
-            import re
-            json_match = re.search(r'\{.*\}', raw)
-            if json_match:
-                return json.loads(json_match.group(0))
-
-            return None
-        except Exception as e:
-            if DEBUG_MODE:
-                self.get_logger().debug(f'帧解析失败: {e}')
-            return None
+        result = parse_frame(raw)
+        if result is None and DEBUG_MODE:
+            self.get_logger().debug(f'帧解析失败: {raw[:100]}')
+        return result
 
     def on_result(self, msg: String):
         """识别结果回调 — 写入状态文件供 Web 轮询"""
