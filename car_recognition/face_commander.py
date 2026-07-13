@@ -136,7 +136,7 @@ if __name__ == '__main__':
     with open(img_path, 'rb') as f:
         img_b64 = base64.b64encode(f.read()).decode('utf-8')
 
-    recipient = sys.argv[2] if len(sys.argv) > 2 else '张明'
+    recipient = sys.argv[2] if len(sys.argv) > 2 else 'zyf'
     classroom = sys.argv[3] if len(sys.argv) > 3 else '501'
 
     print(f"发送人脸扫描指令...")

@@ -4,7 +4,7 @@
 输出:
   models/face_detect.onnx   — 人脸检测 (UltraFace, 轻量)
   models/face_embed.onnx    — 人脸嵌入 (FaceNet InceptionResnetV1)
-  models/test_embeddings.npz — 注册用户的嵌入向量 (张明/李芳)
+  models/test_embeddings.npz — 注册用户的嵌入向量 (zyf/hzh)
 
 用法:
   python export_models.py
@@ -151,8 +151,8 @@ for person_dir in sorted(FACEDATA_DIR.iterdir()):
     if not person_dir.is_dir():
         continue
     name = person_dir.name
-    # personA -> 张明, personB -> 李芳 (匹配 db.js 中的映射)
-    mapping = {'personA': '张明', 'personB': '李芳'}
+    # personA -> zyf, personB -> hzh
+    mapping = {'personA': 'zyf', 'personB': 'hzh'}
     display_name = mapping.get(name, name)
 
     embs = []
@@ -213,7 +213,7 @@ THRESHOLD = 0.6378  # 之前训练得到的最佳阈值
 correct = 0
 total = 0
 for name, info in enrolled_embeddings.items():
-    person_dir = mapping_rev = {'张明': 'personA', '李芳': 'personB'}.get(name)
+    person_dir = mapping_rev = {'zyf': 'personA', 'hzh': 'personB'}.get(name)
     src_dir = FACEDATA_DIR / person_dir if person_dir else None
     if not src_dir or not src_dir.exists():
         continue

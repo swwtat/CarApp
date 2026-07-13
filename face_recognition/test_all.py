@@ -108,14 +108,14 @@ check(f'陌生人样本: {stranger_detected}/{len(stranger_images)} 张检测到
 # ===== 嵌入提取测试 =====
 section('测试 3: 嵌入提取 + 比对')
 
-# 提取张明和李芳的嵌入向量
+# 提取 zyf 和 hzh 的嵌入向量
 def get_enrolled_embeddings():
     """从 facedata 提取注册用户嵌入"""
     enrolled = {}
     for person_dir in sorted(FACEDATA_DIR.glob('person*')):
         if not person_dir.is_dir():
             continue
-        mapping = {'personA': '张明', 'personB': '李芳'}
+        mapping = {'personA': 'zyf', 'personB': 'hzh'}
         name = mapping.get(person_dir.name, person_dir.name)
         embs = []
         for img_path in sorted(person_dir.glob('*.jpg')):
@@ -147,7 +147,7 @@ for name, info in enrolled.items():
     centroid = info['centroid']
     intra_sims = []
     # 重新提取每张图的嵌入并与 centroid 比对
-    person_dir = {'张明': 'personA', '李芳': 'personB'}.get(name)
+    person_dir = {'zyf': 'personA', 'hzh': 'personB'}.get(name)
     if not person_dir:
         continue
     for img_path in sorted((FACEDATA_DIR / person_dir).glob('*.jpg'))[:5]:
@@ -165,10 +165,10 @@ for name, info in enrolled.items():
         all_above = all(s >= THRESHOLD for s in intra_sims)
         check(f'{name} 本人验证: avg sim={avg_sim:.4f} (阈值={THRESHOLD})', all_above)
 
-# 不同人测试 (张明 vs 李芳)
-if '张明' in enrolled and '李芳' in enrolled:
-    cross_sim = cosine_sim(enrolled['张明']['centroid'], enrolled['李芳']['centroid'])
-    check(f'张明 vs 李芳: sim={cross_sim:.4f} (应 < {THRESHOLD})', cross_sim < THRESHOLD)
+# 不同人测试 (zyf vs hzh)
+if 'zyf' in enrolled and 'hzh' in enrolled:
+    cross_sim = cosine_sim(enrolled['zyf']['centroid'], enrolled['hzh']['centroid'])
+    check(f'zyf vs hzh: sim={cross_sim:.4f} (应 < {THRESHOLD})', cross_sim < THRESHOLD)
 
 # ===== ONNX 与 PyTorch 一致性测试 =====
 if session is not None:
@@ -191,8 +191,8 @@ if session is not None:
         diff = np.abs(pt_emb - onnx_emb).max()
         check(f'ONNX/PyTorch 最大误差: {diff:.8f} (应 < 0.001)', diff < 0.001)
 
-        sim_pt = cosine_sim(pt_emb, enrolled['张明']['centroid'])
-        sim_onnx = cosine_sim(onnx_emb, enrolled['张明']['centroid'])
+        sim_pt = cosine_sim(pt_emb, enrolled['zyf']['centroid'])
+        sim_onnx = cosine_sim(onnx_emb, enrolled['zyf']['centroid'])
         check(f'PyTorch sim={sim_pt:.4f}, ONNX sim={sim_onnx:.4f} (应接近)', abs(sim_pt - sim_onnx) < 0.01)
     else:
         check('MTCNN 未检测到人脸，跳过', False)
