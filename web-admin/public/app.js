@@ -145,7 +145,8 @@ async function loadDashboard() {
       <div class="meta">
         收件人：${o.recipient_name} (${o.recipient_phone})<br/>
         教室：<strong>${o.classroom_no}</strong> · ${o.classroom_label}<br/>
-        小车：逸夫楼快递小车
+        小车：逸夫楼快递小车<br/>
+        创建：${(o.created_at || '').replace('T', ' ').slice(0, 16)}
       </div>
     </div>
   `).join('');
@@ -160,7 +161,7 @@ async function loadOrders() {
   const tbody = document.getElementById('ordersTable');
 
   if (!orders.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无订单</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无订单</td></tr>';
     return;
   }
 
@@ -173,6 +174,7 @@ async function loadOrders() {
         ? `<img class="face-thumb" src="${o.face_image_url}" alt="人脸" />`
         : '<div class="face-missing">👤</div>'}</td>
       <td>${badge(o.status, o.status_label)}</td>
+      <td><small>${(o.created_at || '').replace('T', ' ').slice(0, 16)}</small></td>
       <td>
         <button class="btn btn-sm btn-ghost" onclick="showDetail(${o.id})">详情</button>
         <button class="btn btn-sm btn-danger" onclick="deleteOrder(${o.id})">删除</button>
@@ -217,6 +219,7 @@ async function showDetail(id) {
         <div class="detail-row"><span class="label">电话</span><span>${o.recipient_phone}</span></div>
         <div class="detail-row"><span class="label">包裹</span><span>${o.package_desc || '—'}</span></div>
         <div class="detail-row"><span class="label">备注</span><span>${o.remark || '—'}</span></div>
+        <div class="detail-row"><span class="label">创建时间</span><span>${(o.created_at || '').replace('T', ' ').slice(0, 16)}</span></div>
       </div>
       <div class="detail-section">
         <h4>送达教室</h4>
