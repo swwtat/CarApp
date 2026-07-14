@@ -104,8 +104,8 @@ def parse_frame(raw: str) -> dict | None:
         size_hex = content[4:6]
         data_size = int(size_hex, 16)
 
-        # data_hex 长度 = (data_size - 2) * 2 (减去 checksum 的 2 个字节)
-        data_hex_len = (data_size - 2) * 2
+        # data_hex 长度 = data_size - 2 (Node.js encoder 按 hex 字符数计)
+        data_hex_len = data_size - 2
         if data_hex_len <= 0:
             return None
 
