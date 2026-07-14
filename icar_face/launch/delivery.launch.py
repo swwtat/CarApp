@@ -39,7 +39,7 @@ def generate_launch_description():
     tcp_face_port = LaunchConfiguration('tcp_face_port', default='6001')
     nav_timeout = LaunchConfiguration('nav_timeout', default='120')
     face_scan_timeout = LaunchConfiguration('face_scan_timeout', default='30')
-    web_admin_url = LaunchConfiguration('web_admin_url', default='http://192.168.43.100:3000')
+    web_admin_url = LaunchConfiguration('web_admin_url', default='http://192.168.43.103:3000')
 
     declare_classrooms = DeclareLaunchArgument(
         'classrooms_config', default_value=classrooms_config,
