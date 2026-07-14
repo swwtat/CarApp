@@ -35,6 +35,12 @@ from .delivery_status import (
     build_status_msg,
 )
 
+VISUAL_DETECT_TOPIC = '/icar/visual/detections'
+VISUAL_DANGER_IMMEDIATE = 'immediate'
+VISUAL_DANGER_WARNING = 'warning'
+VISUAL_CAUTION_RETRY_MAX = 3
+VISUAL_CAUTION_WAIT_SEC = 3.0
+
 # ── Nav2 导入 (可选, 测试环境可能没有安装) ──
 try:
     from nav2_msgs.action import NavigateToPose
@@ -99,6 +105,12 @@ class DeliveryController(Node):
             callback_group=callback_group
         )
 
+        # 订阅: 视觉检测结果 (人员/障碍物/道面)
+        self.visual_sub = self.create_subscription(
+            String, VISUAL_DETECT_TOPIC, self._on_visual_detection, 10,
+            callback_group=callback_group
+        )
+
         # ── Nav2 导航 Action Client ──
         self.nav_client = None
         if HAS_NAV2:
@@ -113,6 +125,12 @@ class DeliveryController(Node):
         self.nav_goal_handle = None
         self.face_scan_timer = None
         self._cancel_requested = False
+
+        # ── 视觉避障 ──
+        self._caution_retry_count = 0
+        self._caution_timer = None
+        self._pre_caution_state = None     # 进入 CAUTION 前的状态 (NAVIGATING/RETURNING)
+        self._pre_caution_coords = None    # 进入 CAUTION 前的目标坐标
 
         # ── 状态文件 ──
         self.status_file = Path.home() / 'icar_delivery_status.json'
@@ -669,6 +687,174 @@ class DeliveryController(Node):
         threading.Thread(target=_post, daemon=True).start()
 
     # ═══════════════════════════════════════════════════════════════
+    # 视觉避障 (人员检测 / 障碍物 / 道面)
+    # ═══════════════════════════════════════════════════════════════
+
+    def _on_visual_detection(self, msg: String):
+        """视觉检测回调 — NAVIGATING/RETURNING 时响应危险, CAUTION 时检查危险解除"""
+        if self.state not in (DeliveryState.NAVIGATING, DeliveryState.RETURNING,
+                               DeliveryState.CAUTION):
+            return
+
+        try:
+            data = json.loads(msg.data)
+        except json.JSONDecodeError:
+            return
+
+        highest = data.get('highest_danger_level', 'info')
+        alerts = data.get('hazard_alerts', [])
+        confirmed = data.get('danger_confirmed', False)
+
+        # CAUTION 状态下检查危险是否解除
+        if self.state == DeliveryState.CAUTION:
+            if not confirmed or highest == 'info':
+                # 危险已解除, 取消等待定时器, 立即重试
+                self.get_logger().info('[视觉避障] 障碍物已清除, 立即恢复导航')
+                if self._caution_timer:
+                    self.destroy_timer(self._caution_timer)
+                    self._caution_timer = None
+                self._retry_navigation_after_caution()
+            return
+
+        # NAVIGATING / RETURNING 状态: 检查是否需要停车
+        if not confirmed:
+            return
+
+        if highest == VISUAL_DANGER_IMMEDIATE:
+            self._handle_danger(alerts)
+        elif highest == VISUAL_DANGER_WARNING:
+            self._handle_caution(alerts)
+
+    def _handle_danger(self, alerts: list):
+        """
+        处理 immediate 级别危险 — 立即停车。
+
+        取消当前 Nav2 goal → 进入 CAUTION 状态 → 等待 N 秒后检查 → 重试或失败。
+        """
+        # 过滤出 immediate 级别的告警
+        immediate_alerts = [a for a in alerts if a.get('level') == 'immediate']
+        if not immediate_alerts:
+            return
+
+        alert = immediate_alerts[0]
+        self.get_logger().warn(
+            f'[视觉避障] 检测到 immediate 危险: {alert.get("message", "")}'
+        )
+
+        # 保存当前状态以便恢复
+        self._pre_caution_state = self.state
+        self._pre_caution_coords = None
+
+        # 取消导航
+        self._cancel_navigation()
+
+        # 进入 CAUTION 状态
+        self._set_state(DeliveryState.CAUTION)
+        self._publish_status(
+            message=f'检测到障碍物, 停车等待 ({alert.get("class", "unknown")})',
+            extra={'warning': alert.get('type', 'hazard'), 'alert': alert}
+        )
+
+        # 启动等待定时器
+        self._start_caution_timer()
+
+    def _handle_caution(self, alerts: list):
+        """
+        处理 warning 级别危险 — 仅记录日志, 不改变导航。
+        """
+        warning_alerts = [a for a in alerts if a.get('level') == 'warning']
+        if not warning_alerts:
+            return
+
+        alert = warning_alerts[0]
+        self.get_logger().info(
+            f'[视觉避障] warning: {alert.get("message", "")}'
+        )
+        # warning 级别不中断导航, 仅通过 status 字段通知
+        self._publish_status(
+            extra={'warning': alert.get('type', 'hazard'), 'level': 'warning'}
+        )
+
+    def _start_caution_timer(self):
+        """启动 CAUTION 等待定时器 (等待障碍物清除)"""
+        if self._caution_timer:
+            self.destroy_timer(self._caution_timer)
+
+        wait_sec = VISUAL_CAUTION_WAIT_SEC
+        self.get_logger().info(f'[视觉避障] 等待 {wait_sec}s 后检查障碍物是否清除...')
+        self._caution_timer = self.create_timer(
+            wait_sec, self._on_caution_timeout
+        )
+
+    def _on_caution_timeout(self):
+        """CAUTION 超时回调 — 检查是否可重试导航"""
+        if self._caution_timer:
+            self.destroy_timer(self._caution_timer)
+            self._caution_timer = None
+
+        self._caution_retry_count += 1
+        self.get_logger().info(
+            f'[视觉避障] 第 {self._caution_retry_count}/{VISUAL_CAUTION_RETRY_MAX} 次重试检查'
+        )
+
+        if self._caution_retry_count > VISUAL_CAUTION_RETRY_MAX:
+            self.get_logger().error(
+                f'[视觉避障] 超过最大重试次数 ({VISUAL_CAUTION_RETRY_MAX}), 配送失败'
+            )
+            self._set_state(DeliveryState.FAILED)
+            self._publish_status(message='障碍物未清除, 配送失败')
+            self._reset_caution()
+            return
+
+        # 尝试恢复导航
+        self._retry_navigation_after_caution()
+
+    def _retry_navigation_after_caution(self):
+        """
+        危险解除后重试导航。
+
+        注意: 此方法可能在 CAUTION 定时器触发时调用,
+        也可能在收到"危险已解除"的视觉检测消息时调用。
+        """
+        if self._pre_caution_state is None:
+            self.get_logger().warn('[视觉避障] 无前置导航状态, 无法恢复')
+            self._set_state(DeliveryState.FAILED)
+            self._publish_status(message='导航恢复失败')
+            self._reset_caution()
+            return
+
+        self.get_logger().info(
+            f'[视觉避障] 恢复导航 → {STATE_LABELS.get(self._pre_caution_state, "?")}'
+        )
+
+        # 恢复之前的状态
+        prev_state = self._pre_caution_state
+        self._reset_caution()
+
+        if prev_state == DeliveryState.NAVIGATING:
+            # 重新导航到教室
+            coords = self.current_order.get('classroom_coords') if self.current_order else None
+            if coords:
+                self._start_navigation(coords)
+            else:
+                self.get_logger().error('[视觉避障] 无教室坐标, 无法恢复导航')
+                self._set_state(DeliveryState.FAILED)
+                self._publish_status(message='导航恢复失败 (无坐标)')
+        elif prev_state == DeliveryState.RETURNING:
+            self._start_return()
+        else:
+            self._set_state(prev_state)
+
+    def _reset_caution(self):
+        """重置避障相关变量"""
+        self._caution_retry_count = 0
+        self._pre_caution_state = None
+        self._pre_caution_coords = None
+        if self._caution_timer:
+            self.destroy_timer(self._caution_timer)
+            self._caution_timer = None
+
+    # ═══════════════════════════════════════════════════════════════
     # 生命周期
     # ═══════════════════════════════════════════════════════════════
 
@@ -677,6 +863,8 @@ class DeliveryController(Node):
         # 取消导航
         if self.nav_goal_handle:
             self._cancel_navigation()
+        # 清理避障定时器
+        self._reset_caution()
         # 写入最终状态
         self._set_state(DeliveryState.IDLE)
         self._publish_status(message='调度引擎已关闭')

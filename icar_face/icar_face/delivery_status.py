@@ -19,6 +19,7 @@ class DeliveryState(Enum):
     RETURNING = 'returning'     # 返回充电桩途中
     DONE = 'done'               # 配送完成
     FAILED = 'failed'           # 配送失败
+    CAUTION = 'caution'         # 检测到障碍物, 停车等待中
 
 
 # 状态 → 中文标签
@@ -33,6 +34,7 @@ STATE_LABELS = {
     DeliveryState.RETURNING: '返回充电桩',
     DeliveryState.DONE: '配送完成',
     DeliveryState.FAILED: '配送失败',
+    DeliveryState.CAUTION: '避障等待',
 }
 
 # 终态集合
@@ -45,6 +47,7 @@ ACTIVE_STATES = {
     DeliveryState.SCANNING,
     DeliveryState.DELIVERING,
     DeliveryState.RETURNING,
+    DeliveryState.CAUTION,
 }
 
 

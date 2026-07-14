@@ -41,3 +41,14 @@ DELIVERY_FACE_TIMEOUT_SEC = 30  # face scan timeout during delivery
 
 # ── Debug ──────────────────────────────────────────
 DEBUG_MODE = os.environ.get('ICAR_FACE_DEBUG', '0') == '1'
+
+# ── YOLO 视觉检测 ──────────────────────────────────
+VISUAL_DETECT_TOPIC = '/icar/visual/detections'
+# 激活的 COCO 类别 (person + vehicle + obstacles)
+VISUAL_DEFAULT_CLASSES = [0, 1, 2, 3, 24, 28, 32, 39, 56, 58]
+# 危险等级关键字
+VISUAL_DANGER_IMMEDIATE = 'immediate'
+VISUAL_DANGER_WARNING = 'warning'
+# CAUTION 状态下最大重试次数 & 等待秒数
+VISUAL_CAUTION_RETRY_MAX = 3
+VISUAL_CAUTION_WAIT_SEC = 3.0
