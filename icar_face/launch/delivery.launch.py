@@ -6,6 +6,9 @@ iCar 完整配送 Launch 文件
   2. 人脸识别 (face_recognizer)
   3. TCP 桥接 (face_bridge)
   4. 订单调度引擎 (delivery_controller)
+  5. 语音播报 (voice_broadcaster)
+  6. YOLO 视觉检测 (visual_detector)
+  7. 激光雷达警卫 (lidar_guard)
 
 前置条件:
   - 相机驱动已启动 (/camera/color/image_raw)
@@ -155,6 +158,31 @@ def generate_launch_description():
         LogInfo(msg='人脸扫描 TCP: 端口 6001'),
         LogInfo(msg='配送状态文件: ~/icar_delivery_status.json'),
         LogInfo(msg='语音播报: 已启动'),
+        # ── 7. 激光雷达警卫 ──
+        TimerAction(
+            period=6.0,
+            actions=[
+                Node(
+                    package='icar_face',
+                    executable='lidar_guard',
+                    name='lidar_guard',
+                    output='screen',
+                    parameters=[{
+                        'safe_distance': 2.0,
+                        'warning_distance': 1.0,
+                        'danger_distance': 0.5,
+                        'critical_distance': 0.3,
+                        'approach_speed_threshold': 0.5,
+                        'sudden_appear_grace_sec': 1.5,
+                        'buzzer_enabled': True,
+                        'buzzer_gpio_pin': 18,
+                        'buzzer_type': 'gpio',
+                    }],
+                ),
+            ],
+        ),
+
         LogInfo(msg='YOLO视觉检测: 已启动'),
+        LogInfo(msg='激光雷达警卫: 已启动'),
         LogInfo(msg='确保 Nav2 Docker 已启动后即可接收订单'),
     ])

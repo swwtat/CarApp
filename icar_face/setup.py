@@ -34,6 +34,7 @@ setup(
             'delivery_controller = icar_face.delivery_controller:main',
             'voice_broadcaster = icar_face.voice_broadcaster:main',
             'visual_detector = icar_face.visual_detector:main',
+            'lidar_guard = icar_face.lidar_guard:main',
         ],
     },
 )

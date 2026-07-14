@@ -52,3 +52,12 @@ VISUAL_DANGER_WARNING = 'warning'
 # CAUTION 状态下最大重试次数 & 等待秒数
 VISUAL_CAUTION_RETRY_MAX = 3
 VISUAL_CAUTION_WAIT_SEC = 3.0
+
+# ── LiDAR 警卫模式 ────────────────────────────────
+GUARD_STATUS_TOPIC = '/icar/guard/status'
+GUARD_SAFE_DISTANCE = 2.0        # 安全距离 (m)
+GUARD_WARNING_DISTANCE = 1.0     # 警告距离 (m)
+GUARD_DANGER_DISTANCE = 0.5      # 危险距离 (m)
+GUARD_CRITICAL_DISTANCE = 0.3    # 极危距离 (包裹保护)
+GUARD_APPROACH_THRESHOLD = 0.5   # 人靠近速度阈值 (m/s)
+GUARD_SUDDEN_GRACE_SEC = 1.5     # 拐角相遇宽限期 (s)

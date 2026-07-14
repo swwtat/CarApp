@@ -111,6 +111,12 @@ class DeliveryController(Node):
             callback_group=callback_group
         )
 
+        # 订阅: 激光雷达警卫告警
+        self.guard_sub = self.create_subscription(
+            String, '/icar/guard/status', self._on_guard_alert, 10,
+            callback_group=callback_group
+        )
+
         # ── Nav2 导航 Action Client ──
         self.nav_client = None
         if HAS_NAV2:
@@ -853,6 +859,40 @@ class DeliveryController(Node):
         if self._caution_timer:
             self.destroy_timer(self._caution_timer)
             self._caution_timer = None
+
+    # ═══════════════════════════════════════════════════════════════
+    # 激光雷达警卫告警
+    # ═══════════════════════════════════════════════════════════════
+
+    def _on_guard_alert(self, msg: String):
+        """处理激光雷达警卫告警"""
+        try:
+            data = json.loads(msg.data)
+        except json.JSONDecodeError:
+            return
+
+        zone = data.get('zone', 'safe')
+        package_alert = data.get('package_alert', False)
+
+        if package_alert:
+            # 包裹被非授权人员接近 → 最高优先级告警
+            self.get_logger().error('[警卫] 包裹安全告警！非授权人员接近包裹')
+            self._publish_status(
+                message='包裹安全告警！检测到非授权取件',
+                extra={'alert': 'package_theft', 'zone': zone,
+                       'min_distance': data.get('min_distance')}
+            )
+        elif zone in ('danger', 'critical'):
+            # 有人过于靠近, 取消导航进入 CAUTION
+            if self.state in (DeliveryState.NAVIGATING, DeliveryState.RETURNING):
+                self._handle_danger([{
+                    'level': 'immediate',
+                    'type': 'person_approaching',
+                    'class': 'person',
+                    'message': (
+                        f'人员靠近 ({data.get("min_distance", 0):.2f}m), 停车等待'
+                    ),
+                }])
 
     # ═══════════════════════════════════════════════════════════════
     # 生命周期
