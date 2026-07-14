@@ -89,33 +89,38 @@ def parse_frame(raw: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
-    # ── 方式 2: 标准协议帧解析 ──
+    # ── 方式 2: 标准协议帧解析 (兼容 SIZE=2 和 SIZE=4) ──
     try:
         # 找帧边界
         start = raw.index('$')
         end = raw.index('#', start)
         content = raw[start + 1:end]
 
-        if len(content) < 10:
+        if len(content) < 7:
             return None
 
-        # content = 01 + type(2) + size(4) + data_hex + checksum(2)
         frame_type = content[2:4]
-        size_hex = content[4:8]
-        data_size = int(size_hex, 16)
-
-        # data_hex 长度 = data_size - checksum_len(2)
-        data_hex_len = data_size - 2
-        if data_hex_len <= 0:
+        if frame_type not in ('20', '21', '22'):
             return None
 
-        data_hex = content[8:8 + data_hex_len]
+        # 尝试 SIZE=4 (新格式), 再尝试 SIZE=2 (旧格式)
+        for size_len in (4, 2):
+            try:
+                if len(content) < 4 + size_len + 2:
+                    continue
+                size_hex = content[4:4 + size_len]
+                data_size = int(size_hex, 16)
+                data_hex_len = data_size - 2
+                data_start = 4 + size_len
+                if data_hex_len <= 0 or data_hex_len > len(content) - data_start - 2:
+                    continue
 
-        if frame_type in ('20', '21', '22'):
-            # 配送相关帧: data 是 JSON
-            json_str = hex_to_string(data_hex)
-            if json_str:
-                return json.loads(json_str)
+                data_hex = content[data_start:data_start + data_hex_len]
+                json_str = hex_to_string(data_hex)
+                if json_str and json_str.startswith('{'):
+                    return json.loads(json_str)
+            except (ValueError, json.JSONDecodeError):
+                continue
 
         return None
 
