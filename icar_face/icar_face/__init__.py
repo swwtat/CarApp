@@ -3,10 +3,16 @@
 import os
 from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────
-PACKAGE_DIR = Path(__file__).parent.parent.resolve()
-MODELS_DIR = PACKAGE_DIR / 'models'
-CONFIG_DIR = PACKAGE_DIR / 'config'
+# ── Paths (resolve install/share layout) ────────────
+try:
+    from ament_index_python.packages import get_package_share_directory
+    _SHARE_DIR = Path(get_package_share_directory('icar_face'))
+except ImportError:
+    # fallback: running from source tree
+    _SHARE_DIR = Path(__file__).parent.parent.resolve()
+
+MODELS_DIR = _SHARE_DIR / 'models'
+CONFIG_DIR = _SHARE_DIR / 'config'
 EMBED_MODEL_PATH = MODELS_DIR / 'face_embed.onnx'
 EMBEDDINGS_PATH = MODELS_DIR / 'enrolled_embeddings.npz'
 CLASSROOMS_CONFIG = CONFIG_DIR / 'classrooms.yaml'
