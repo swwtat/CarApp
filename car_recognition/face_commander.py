@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 
 # ── 配置 ──
-CAR_HOST = '192.168.1.11'
+CAR_HOST = '192.168.43.82'
 CAR_FACE_PORT = 6001         # 小车人脸识别 TCP 端口
 WEB_CALLBACK_PORT = 3000     # Web 管理端回调地址
 TIMEOUT = 10
@@ -65,7 +65,7 @@ def build_face_scan_frame(order_id, recipient_name, face_image_base64, classroom
         bytes: 完整 TCP 帧
     """
     payload = {
-        'action': 'face_scan',
+        'action': 'start_scan',
         'order_id': order_id,
         'recipient_name': recipient_name,
         'face_image_base64': face_image_base64,

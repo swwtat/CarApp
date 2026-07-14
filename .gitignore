@@ -39,3 +39,13 @@ yolo_training/yolov5-7.0/
 package-lock.json
 face_recognition/models/face_embed.onnx
 icar_face/models/face_embed.onnx
+
+# Python
+__pycache__/
+
+# SLAM Map (large binary)
+icar_face/config/*.pgm
+icar_face/config/map_visualization.png
+
+# Transfer files
+transfer/

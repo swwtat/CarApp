@@ -8,12 +8,10 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'faces');
 
 const SITE_FLOOR = '逸夫楼 5 层';
 const SINGLE_CAR_NAME = '逸夫楼快递小车';
-const SINGLE_CAR_IP = '192.168.1.11';
+const SINGLE_CAR_IP = '192.168.43.82';
 
 const YIFU_5F_CLASSROOMS = [
-  ['501', '501 教室', 0, 0], ['502', '502 教室', 0, 1], ['503', '503 教室', 0, 2], ['504', '504 教室', 0, 3],
-  ['505', '505 教室', 1, 0], ['506', '506 教室', 1, 1], ['507', '507 教室', 1, 2], ['508', '508 教室', 1, 3],
-  ['509', '509 教室', 2, 0], ['510', '510 教室', 2, 1], ['511', '511 教室', 2, 2], ['512', '512 教室', 2, 3],
+  ['501', '501 教室', 0, 0], ['502', '502 教室', 0, 1], ['503', '503 教室', 0, 2],
 ];
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -167,8 +165,8 @@ function seedRecipients() {
 
   // Copy one face photo from each person in facedata/ into uploads/faces/
   const mapping = [
-    { name: '张明', phone: '13800138001', srcDir: 'personA' },
-    { name: '李芳', phone: '13900139002', srcDir: 'personB' },
+    { name: 'zyf', phone: '13800138001', srcDir: 'personA' },
+    { name: 'hzh', phone: '13900139002', srcDir: 'personB' },
   ];
 
   for (const { name, phone, srcDir } of mapping) {
@@ -208,9 +206,8 @@ function seedIfEmpty() {
   `);
 
   const samples = [
-    ['KD20260712001', '张明', '13800138001', '501', getFace('张明'), '文件袋 × 1', '进入教室后扫描人脸交付', 'navigating', carId],
-    ['KD20260712002', '李芳', '13900139002', '505', getFace('李芳'), '实验器材 × 1', '轻拿轻放', 'queued', carId],
-    ['KD20260712003', '王强', '13700137003', '509', getFace('王强'), '教材 × 2', '需本人签收', 'queued', carId],
+    ['KD20260712001', 'zyf', '13800138001', '501', getFace('zyf'), '文件袋 × 1', '进入教室后扫描人脸交付', 'navigating', carId],
+    ['KD20260712002', 'hzh', '13900139002', '502', getFace('hzh'), '实验器材 × 1', '轻拿轻放', 'queued', carId],
   ];
   for (const row of samples) insertOrder.run(...row);
 }

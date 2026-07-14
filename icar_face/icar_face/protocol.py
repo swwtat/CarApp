@@ -20,6 +20,8 @@ iCar TCP 协议解析 — 共享模块
   frame = build_frame(payload, '20')  # dict -> bytes
 """
 
+from __future__ import annotations
+
 import re
 import json
 

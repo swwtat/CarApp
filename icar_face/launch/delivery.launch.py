@@ -39,6 +39,7 @@ def generate_launch_description():
     tcp_face_port = LaunchConfiguration('tcp_face_port', default='6001')
     nav_timeout = LaunchConfiguration('nav_timeout', default='120')
     face_scan_timeout = LaunchConfiguration('face_scan_timeout', default='30')
+    web_admin_url = LaunchConfiguration('web_admin_url', default='http://192.168.43.100:3000')
 
     declare_classrooms = DeclareLaunchArgument(
         'classrooms_config', default_value=classrooms_config,
@@ -59,6 +60,10 @@ def generate_launch_description():
     declare_face_timeout = DeclareLaunchArgument(
         'face_scan_timeout', default_value=face_scan_timeout,
         description='人脸扫描超时 (秒)'
+    )
+    declare_web_admin = DeclareLaunchArgument(
+        'web_admin_url', default_value=web_admin_url,
+        description='Web 管理端地址 (PC IP)'
     )
 
     return LaunchDescription([
@@ -120,7 +125,7 @@ def generate_launch_description():
                         'classrooms_config': Path(__file__).parent.parent / 'config' / 'classrooms.yaml',
                         'nav_timeout': 120,
                         'face_scan_timeout': 30,
-                        'web_admin_url': '',  # 设为 Web 管理端地址
+                        'web_admin_url': web_admin_url,
                     }],
                 ),
             ],
