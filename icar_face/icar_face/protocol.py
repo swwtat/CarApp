@@ -89,37 +89,41 @@ def parse_frame(raw: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
-    # ── 方式 2: 标准协议帧解析 (兼容 SIZE=2 和 SIZE=4) ──
+    # ── 方式 2: 标准协议帧解析 ──
+    # 帧格式: $01<TYPE=2><SIZE><DATA_HEX><CHECKSUM=2>#
+    # SIZE 字段长度可变, 直接跳过它: content[4:-2] = SIZE + DATA_HEX
     try:
-        # 找帧边界
         start = raw.index('$')
-        end = raw.index('#', start)
+        end = raw.index('#', start) if '#' in raw[start:] else None
+        if end is None:
+            return None
         content = raw[start + 1:end]
 
-        if len(content) < 7:
+        if len(content) < 8:
             return None
 
         frame_type = content[2:4]
         if frame_type not in ('20', '21', '22'):
             return None
 
-        # 尝试 SIZE=4 (新格式), 再尝试 SIZE=2 (旧格式)
-        for size_len in (4, 2):
+        # content = 01 + TYPE(2) + SIZE(variable) + DATA_HEX + CHECKSUM(2)
+        # 跳过 SIZE 字段: 从头部之后到末尾 checksum 之前取 DATA_HEX
+        # 策略: 从后往前找, checksum 固定 2 字符, data_hex 是剩余部分
+        # 尝试不同 SIZE 长度 (2-6), 看哪个能解析出有效 JSON
+        for size_len in range(2, 7):
+            data_start = 4 + size_len
+            data_hex_len = len(content) - data_start - 2
+            if data_hex_len <= 0:
+                continue
+            data_hex = content[data_start:data_start + data_hex_len]
+            # hex 字符数必须偶数
+            if len(data_hex) % 2 != 0:
+                continue
             try:
-                if len(content) < 4 + size_len + 2:
-                    continue
-                size_hex = content[4:4 + size_len]
-                data_size = int(size_hex, 16)
-                data_hex_len = data_size - 2
-                data_start = 4 + size_len
-                if data_hex_len <= 0 or data_hex_len > len(content) - data_start - 2:
-                    continue
-
-                data_hex = content[data_start:data_start + data_hex_len]
                 json_str = hex_to_string(data_hex)
-                if json_str and json_str.startswith('{'):
+                if json_str and '{' in json_str:
                     return json.loads(json_str)
-            except (ValueError, json.JSONDecodeError):
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
 
         return None
