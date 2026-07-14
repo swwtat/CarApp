@@ -96,20 +96,20 @@ def parse_frame(raw: str) -> dict | None:
         end = raw.index('#', start)
         content = raw[start + 1:end]
 
-        if len(content) < 8:
+        if len(content) < 10:
             return None
 
-        # content = 01 + type(2) + size(2) + data_hex + checksum(2)
+        # content = 01 + type(2) + size(4) + data_hex + checksum(2)
         frame_type = content[2:4]
-        size_hex = content[4:6]
+        size_hex = content[4:8]
         data_size = int(size_hex, 16)
 
-        # data_hex 长度 = data_size - 2 (Node.js encoder 按 hex 字符数计)
+        # data_hex 长度 = data_size - checksum_len(2)
         data_hex_len = data_size - 2
         if data_hex_len <= 0:
             return None
 
-        data_hex = content[6:6 + data_hex_len]
+        data_hex = content[8:8 + data_hex_len]
 
         if frame_type in ('20', '21', '22'):
             # 配送相关帧: data 是 JSON
@@ -137,10 +137,9 @@ def build_frame(payload: dict, frame_type: str = '20') -> bytes:
     json_str = json.dumps(payload, ensure_ascii=False)
     data_hex = string_to_hex(json_str)
 
-    # 帧格式: $01<type><size><data_hex><checksum>#
-    # size = data 字节数 + checksum 字节数(2)
-    data_bytes = len(data_hex) // 2
-    size = number_to_hex(data_bytes + 2, 2)
+    # 帧格式: $01<type=2><size=4><data_hex><checksum=2>#
+    # size = hex 字符数 + checksum 长度(2)
+    size = number_to_hex(len(data_hex) + 2, 4)
 
     prefix = f'01{frame_type}{size}{data_hex}'
     cs = number_to_hex(calc_checksum(prefix), 2)

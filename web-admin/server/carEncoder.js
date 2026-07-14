@@ -17,7 +17,7 @@ function checksum(data) {
 
 function baseEncode(type, ...datas) {
   const info = datas.join('');
-  const size = numberToHex(info.length + 2, 2);
+  const size = numberToHex(info.length + 2, 4);
   let code = `01${type}${size}${info}`;
   code += numberToHex(checksum(code), 2);
   return `$${code}#`;

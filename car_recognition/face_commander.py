@@ -75,10 +75,10 @@ def build_face_scan_frame(order_id, recipient_name, face_image_base64, classroom
     json_str = json.dumps(payload, ensure_ascii=False)
     data_hex = string_to_hex(json_str)
 
-    # 帧格式: $01<type=20><size><data_hex><checksum>#
+    # 帧格式: $01<type=2><size=4><data_hex><checksum=2>#
     frame_type = '20'
-    # size = data 总长度 + 校验和 (2 字符)
-    size = number_to_hex(len(data_hex) // 2 + 2, 2)
+    # size = hex 字符数 + 校验和长度(2)
+    size = number_to_hex(len(data_hex) + 2, 4)
     prefix = f'01{frame_type}{size}{data_hex}'
     cs = number_to_hex(calc_checksum(prefix), 2)
     frame = f'${prefix}{cs}#'
