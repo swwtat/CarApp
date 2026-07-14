@@ -122,7 +122,7 @@ def generate_launch_description():
                     output='screen',
                     parameters=[{
                         'tcp_port': 6000,
-                        'classrooms_config': Path(__file__).parent.parent / 'config' / 'classrooms.yaml',
+                        'classrooms_config': str(Path(__file__).parent.parent / 'config' / 'classrooms.yaml'),
                         'nav_timeout': 120,
                         'face_scan_timeout': 30,
                         'web_admin_url': web_admin_url,
