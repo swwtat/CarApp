@@ -1,22 +1,3 @@
-# Gradle
-.gradle/
-build/
-!gradle/wrapper/gradle-wrapper.jar
-
-# IDE
-*.iml
-.idea/
-!.idea/.gitignore
-
-# Android
-/local.properties
-/captures
-.externalNativeBuild
-.cxx
-*.apk
-*.aab
-*.ap_
-
 # OS
 .DS_Store
 Thumbs.db
@@ -24,28 +5,23 @@ Thumbs.db
 # Claude
 .claude/
 
-# Keystore
-*.jks
-*.keystore
-
-# Web Admin
-web-admin/node_modules/
-web-admin/.npm-cache/
-web-admin/data/
-web-admin/uploads/faces/*
-!web-admin/uploads/faces/.gitkeep
-*.onnx.data
-yolo_training/yolov5-7.0/
-package-lock.json
-face_recognition/models/face_embed.onnx
-icar_face/models/face_embed.onnx
-
 # Python
 __pycache__/
 
-# SLAM Map (large binary)
+# Web Admin
+web-admin/node_modules/
+web-admin/data/
+web-admin/uploads/faces/*
+!web-admin/uploads/faces/.gitkeep
+
+# Face Recognition
+face_recognition/models/face_embed.onnx
+icar_face/models/face_embed.onnx
+*.onnx.data
+
+# YOLO
+yolo_training/yolov5-7.0/
+
+# SLAM Map
 icar_face/config/*.pgm
 icar_face/config/map_visualization.png
-
-# Transfer files
-transfer/
