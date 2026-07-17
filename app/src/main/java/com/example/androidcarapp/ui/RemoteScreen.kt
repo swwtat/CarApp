@@ -48,6 +48,11 @@ fun RemoteScreen(
         onDispose { TcpManager.onConnectionStateChanged = null }
     }
 
+    // 连接状态变化时自动 启动/停止 摄像头
+    LaunchedEffect(isConnected) {
+        if (isConnected) viewModel.startCameraIfReady()
+    }
+
     LaunchedEffect(Unit) { while (true) { delay(3000) } }
 
     val statusColor = if (isConnected) Color(0xFF00FF88) else Color(0xFFFF4444)
@@ -165,7 +170,7 @@ fun RemoteScreen(
 
                 // ── 右半屏: 摄像头预览 (集成 CameraStreamView) ──
                 CameraStreamView(
-                    cameraClient = viewModel.cameraClientPublic,
+                    cameraClient = viewModel.cameraClient,
                     onCapture = { viewModel.capturePhoto() },
                     modifier = Modifier.weight(1f).fillMaxHeight()
                         .border(1.dp, Color(0xFF2A2A4A))

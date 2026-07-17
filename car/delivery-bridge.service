@@ -1,0 +1,14 @@
+[Unit]
+Description=Delivery Bridge
+After=network.target
+
+[Service]
+Type=simple
+User=jetson
+WorkingDirectory=/home/jetson/delivery
+ExecStart=/usr/bin/python3 /home/jetson/delivery/delivery_server.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

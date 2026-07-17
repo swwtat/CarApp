@@ -206,5 +206,5 @@ object TcpManager {
     }
 
     /** 心跳包 */
-    const val HEARTBEAT_MSG = "\$010000000000#"
+    const val HEARTBEAT_MSG = "\$011006000017#"  // 摇杆停止 (x=0,y=0)，避免 type=00 导致解析错误断连
 }

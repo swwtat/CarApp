@@ -3,6 +3,9 @@ package com.example.androidcarapp.ui
 import android.app.Application
 import android.graphics.Bitmap
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.androidcarapp.camera.CameraCaptureManager
@@ -27,9 +30,9 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     /** TCP 连接状态 */
     val isConnected: Boolean get() = TcpManager.isConnected()
 
-    /** 摄像头客户端 (null = 未连接或未配置) */
-    private var cameraClient: CameraStreamClient? = null
-    val cameraClientPublic: CameraStreamClient? get() = cameraClient
+    /** 摄像头客户端 (null = 未连接或未配置) — Compose 响应式状态 */
+    var cameraClient by mutableStateOf<CameraStreamClient?>(null)
+        private set
 
     /** 拍照结果 */
     private val _captureResult = MutableStateFlow<String?>(null)

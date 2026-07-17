@@ -27,15 +27,21 @@ class CameraStreamClient(private val baseUrl: String) {
         private const val POLL_INTERVAL_MS = 100L  // ~10 FPS
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var scope = createScope()
     private val _frameFlow = MutableStateFlow<Bitmap?>(null)
     val frameFlow: StateFlow<Bitmap?> = _frameFlow
 
     private var isRunning = false
 
+    private fun createScope() = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     fun start() {
         if (isRunning) return
         isRunning = true
+        // 如果之前的 scope 已被 cancel，创建新的
+        if (!scope.isActive) {
+            scope = createScope()
+        }
         scope.launch { pollLoop() }
     }
 
@@ -57,7 +63,7 @@ class CameraStreamClient(private val baseUrl: String) {
                     _frameFlow.value = bitmap
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Poll error: ")
+                    Log.w(TAG, "Poll error: ${e.message}", e)
             }
             delay(POLL_INTERVAL_MS)
         }
@@ -67,7 +73,7 @@ class CameraStreamClient(private val baseUrl: String) {
     private fun fetchFrame(): Bitmap? {
         var conn: HttpURLConnection? = null
         return try {
-            val url = URL("/capture")
+            val url = URL("$baseUrl/capture")
             conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = CONNECT_TIMEOUT
                 readTimeout = READ_TIMEOUT
@@ -79,7 +85,7 @@ class CameraStreamClient(private val baseUrl: String) {
             }
             bitmap
         } catch (e: Exception) {
-            Log.w(TAG, "fetchFrame failed: ")
+            Log.w(TAG, "fetchFrame failed: ${e.message}", e)
             null
         } finally {
             try { conn?.disconnect() } catch (_: Exception) {}
