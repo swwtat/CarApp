@@ -1,108 +1,70 @@
-# iCar Face Recognition — Jetson 部署指南
+# 🧠 icar_face — 小车智能配送系统
 
-## 系统架构
+运行在 Jetson Orin Nano (ROS2) 上的完整配送执行系统，包含：
+自主导航、人脸核验、避障警卫、语音播报、TCP 桥接、相机工具。
+
+## 目录结构
 
 ```
-Web 管理端 (Express)
-   │
-   │ TCP:6001 → face_bridge (接收指令/回传结果)
-   │
-   ▼
-Jetson Orin Nano (ROS2 foxy)
-   ├── astra_camera (深度相机驱动)
-   │     └── /camera/color/image_raw
-   ├── face_detector (MTCNN 检测)
-   │     └── /icar/face/detections
-   ├── face_recognizer (FaceNet 识别)
-   │     └── /icar/face/recognition
-   └── face_bridge (TCP ↔ ROS2)
+icar_face/
+├── icar_face/               ROS2 核心模块
+│   ├── delivery_controller.py   配送调度引擎（状态机编排全流程）
+│   ├── face_detector.py         人脸检测（MTCNN）
+│   ├── face_recognizer.py       人脸识别（FaceNet ONNX）
+│   ├── face_bridge.py           TCP ↔ ROS2 桥接
+│   ├── face_server.py           人脸服务入口
+│   ├── lidar_guard.py           激光雷达避障警卫
+│   ├── visual_detector.py       视觉目标检测
+│   ├── voice_broadcaster.py     语音播报
+│   ├── protocol.py              TCP 帧协议编解码
+│   └── delivery_status.py       配送状态定义
+├── launch/                 ROS2 Launch 文件
+│   ├── delivery.launch.py       配送系统完整启动
+│   └── icar_face.launch.py      人脸识别独立启动
+├── scripts/                工具脚本
+│   ├── mark_waypoints.py        地图航点标定工具
+│   ├── face_commander.py        人脸扫描指令发送（Web → 小车）
+│   ├── camera_stream_server.py  MJPEG HTTP 相机流服务
+│   ├── cam.py                   简化版相机服务
+│   ├── fix_capture_frame.py     底盘固件补丁
+│   └── copy_models.sh           模型部署脚本
+├── config/                 配置
+│   ├── classrooms.yaml          教室坐标映射
+│   └── yahboomcar 2026714.yaml  地图配置
+├── models/                 ONNX 模型
+├── delivery_server.py     轻量级送货桥接（subprocess 方案，零依赖）
+└── delivery-bridge.service systemd 自启配置
 ```
 
-## 部署步骤
+## 配送流程
 
-### 1. 安装依赖 (Jetson 上)
+```
+Web后台 TCP → 解析订单 → Nav2 自主导航 → 到达教室
+→ 人脸检测+识别 → 核验通过 → 语音播报 → 交付 → 返回起点
+```
+
+## 两种桥接方式
+
+| 方式 | 文件 | 适用场景 |
+|------|------|----------|
+| ROS2 节点 | `icar_face/delivery_controller.py` | 需要完整配送流程（人脸+语音+避障）|
+| subprocess 调用 | `delivery_server.py` | 仅需导航，零 Python 依赖 |
+
+## 启动
 
 ```bash
-# PyTorch for Jetson
-sudo apt install python3-pip
-pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+# 完整配送系统
+ros2 launch icar_face delivery.launch.py
 
-# ONNX Runtime GPU
-pip3 install onnxruntime-gpu
-
-# 其他依赖
-pip3 install facenet-pytorch opencv-python numpy pillow
-
-# ROS2 依赖
-sudo apt install ros-foxy-cv-bridge ros-foxy-vision-msgs
-```
-
-### 2. 复制文件
-
-```bash
-# 从开发机
-scp -r icar_face/ jetson@192.168.1.11:~/icar_face
-
-# 在 Jetson 上
-cd ~/icar_face
-pip3 install -e .
-```
-
-### 3. 构建 ROS2 包
-
-```bash
-cd ~/icar_face
-colcon build --symlink-install
-source install/setup.bash
-```
-
-### 4. 启动
-
-```bash
-# 方式1: Launch 一键启动
+# 仅人脸识别
 ros2 launch icar_face icar_face.launch.py
 
-# 方式2: 单独启动
-ros2 run icar_face face_server
+# 轻量桥接（容器内）
+python3 delivery_server.py
 ```
 
-### 5. 测试 (开发机上)
+## 前提
 
-```bash
-# Web 端发送测试指令
-echo '{"action":"start_scan","recipient_name":"张明","order_id":1}' | \
-  nc 192.168.1.11 6001
-
-# 查看状态文件
-cat ~/icar_face_status.json
-```
-
-## 配置文件
-
-| 文件 | 说明 |
-|------|------|
-| `models/face_embed.onnx` | FaceNet ONNX 模型 (0.7 MB) |
-| `models/enrolled_embeddings.npz` | 注册用户嵌入向量 |
-| `models/face_detect.onnx` | 人脸检测模型 (可选, 默认用 MTCNN) |
-
-## 话题
-
-| 话题 | 方向 | 类型 | 说明 |
-|------|------|------|------|
-| `/camera/color/image_raw` | 订阅 | Image | Astra 相机 RGB |
-| `/icar/face/detections` | 发布 | String(JSON) | 检测到的人脸 |
-| `/icar/face/recognition` | 发布 | String(JSON) | 识别结果 |
-| `/icar/face/command` | 订阅 | String(JSON) | 控制指令 |
-
-## 识别流程
-
-```
-1. Web 端下发订单 → TCP 发送 start_scan 指令
-2. face_bridge 接收 → 发布到 /icar/face/command
-3. face_recognizer 收到 → 设置目标收件人
-4. face_detector 持续检测相机帧 → 发布人脸
-5. face_recognizer 收到人脸 → ONNX 提取嵌入 → 比对
-6. 连续 3 次匹配成功 → 发布 recognized 事件
-7. face_bridge 收到 → 写入状态文件 + 通知 Web
-8. 超时 30 秒未匹配 → 发布 timeout 事件
-```
+- ROS2 Humble
+- Nav2 导航栈 + 地图
+- 教室航点坐标已标定（用 `scripts/mark_waypoints.py`）

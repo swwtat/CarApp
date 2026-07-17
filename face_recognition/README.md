@@ -1,21 +1,35 @@
-# 🔍 人脸识别数据 & 模型
+# 🔍 人脸识别 — 训练 & 数据
+
+人脸识别模型训练、评估、数据管理工具链。
 
 ## 目录
 
-| 目录 | 说明 |
-|------|------|
-| `data/enrolled/` | 注册用户照片（每人 20-30 张，多角度多光照）|
-| `data/strangers/` | 陌生人照片（负样本，含 LFW 子集）|
-| `models/` | ONNX 推理模型 + 注册用户嵌入向量 |
-| `output/` | 相似度阈值分析结果 |
+```
+face_recognition/
+├── data/
+│   ├── enrolled/              注册用户照片
+│   │   ├── personA/               收件人 A（11 张）
+│   │   └── personB/               收件人 B（8 张）
+│   └── strangers/              陌生人照片（负样本，200+ 张）
+├── models/
+│   ├── face_embed.onnx            人脸嵌入模型（93.9 MB）
+│   └── enrolled_embeddings.npz    预计算特征向量
+├── output/
+│   ├── similarity_distribution.png  相似度分布图
+│   └── threshold.txt                最优阈值（0.64, TAR=0.90）
+├── demo.py                      演示脚本
+├── verify_faces.py              验证基准测试
+├── export_models.py             导出 ONNX 模型
+└── download_stranger_dataset.py 下载陌生人数据集
+```
 
-## 模型文件
+## 使用
 
-| 文件 | 说明 |
-|------|------|
-| `face_embed.onnx` | SFace 人脸嵌入模型 (0.7 MB) |
-| `enrolled_embeddings.npz` | 已注册用户的预计算特征向量 |
+```bash
+# 录入新用户 → 将照片放入 data/enrolled/<人名>/
+# 提取嵌入
+python export_models.py
 
-## 录入新用户
-
-将自拍照片放入 `data/enrolled/`，运行嵌入提取脚本更新 `enrolled_embeddings.npz`。
+# 标定阈值
+python verify_faces.py
+```
